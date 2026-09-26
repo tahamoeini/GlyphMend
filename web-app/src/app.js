@@ -44,6 +44,14 @@ import {
   validateExtractionWorkerMessage,
 } from "./shared/security-boundaries.js";
 import { createWorkerStartupWatchdog } from "./features/extraction/worker-startup.js";
+import {
+  getLocale,
+  localePhrase,
+  registerUiText,
+  setLocalizedAttribute,
+  setLocalizedText,
+  t,
+} from "./localization.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 if (location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname)) {
@@ -66,6 +74,7 @@ if (location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/i.test(location
   registerSW({ immediate: true });
 }
 const $ = (id) => document.getElementById(id);
+setLocalizedText($("topFileName"), "Document workspace");
 // OCR runtime cache and structural recovery changed in this release. Existing
 // checkpoints must not be presented as results from the current pipeline.
 const EXTRACTION_VERSION = 14;
@@ -216,9 +225,32 @@ function syncTabIndicator(container = document.querySelector(".tabs")) {
 
 function toast(message, error = false) {
   const el = $("toast");
-  el.textContent = message;
+  const localized = localizedUiMessage(message);
+  setLocalizedText(el, localized.message, localized.values);
   el.className = error ? "show error" : "show";
   setTimeout(() => (el.className = ""), 3500);
+}
+
+function localizedUiMessage(message) {
+  const patterns = [
+    [/^Could not open PDF: ([\s\S]*)$/, "Could not open PDF: {error}", ([, error]) => ({ error })],
+    [/^Bundle export failed: ([\s\S]*)$/, "Bundle export failed: {error}", ([, error]) => ({ error })],
+    [/^DOCX export failed: ([\s\S]*)$/, "DOCX export failed: {error}", ([, error]) => ({ error })],
+    [/^Could not reset local data: ([\s\S]*)$/, "Could not reset local data: {error}", ([, error]) => ({ error })],
+    [/^PDF is ([\d.]+) MB; configured maximum is (\d+) MB\.$/, "PDF is {size} MB; configured maximum is {max} MB.", ([, size, max]) => ({ size, max })],
+    [/^PDF has (\d+) pages; configured maximum is (\d+)\.$/, "PDF has {pages} pages; configured maximum is {max}.", ([, pages, max]) => ({ pages, max })],
+    [/^Invalid page range: ([\s\S]*)$/, "Invalid page range: {value}", ([, value]) => ({ value })],
+    [/^Page range must be between 1 and (\d+)\.$/, "Page range must be between 1 and {max}.", ([, max]) => ({ max })],
+    [/^Reading page (\d+)$/, "Reading page {page}", ([, page]) => ({ page })],
+    [/^Extracting page (\d+)$/, "Extracting page {page}", ([, page]) => ({ page })],
+    [/^OCR page (\d+): ([\s\S]*)$/, "OCR page {page}: {status}", ([, page, status]) => ({ page, status })],
+    [/^Extraction finished with (\d+) skipped pages?$/, "Extraction finished with {count} skipped pages", ([, count]) => ({ count })],
+  ];
+  for (const [pattern, key, valuesFromMatch] of patterns) {
+    const match = pattern.exec(message);
+    if (match) return { message: key, values: valuesFromMatch(match) };
+  }
+  return { message, values: {} };
 }
 function log(stage, message, details = {}, level = "info", store = true) {
   const event = {
@@ -244,20 +276,22 @@ function renderLog() {
   $("logOutput").scrollTop = $("logOutput").scrollHeight;
 }
 function setStatus(message, done = 0, total = 0) {
-  $("statusText").textContent = message;
+  const localized = localizedUiMessage(message);
+  setLocalizedText($("statusText"), localized.message, localized.values);
   const pct = total ? Math.round((done / total) * 100) : 0;
   $("progress").value = pct;
   $("progress").textContent = `${pct}%`;
   $("progressText").textContent = `${pct}%`;
   const page = message.match(/page\s+(\d+)/i)?.[1];
-  $("progressPage").textContent = total
+  const pageMessage = total
     ? page
-      ? `Page ${page} of ${total}`
-      : `${done} of ${total} pages processed`
+      ? { key: "Page {page} of {total}", values: { page, total } }
+      : { key: "{done} of {total} pages processed", values: { done, total } }
     : message === "Ready"
-      ? "Configure the document, then start extraction."
-      : "Preparing the document workspace";
-  $("progressStage").textContent = /ocr/i.test(message)
+      ? { key: "Configure the document, then start extraction.", values: {} }
+      : { key: "Preparing the document workspace", values: {} };
+  setLocalizedText($("progressPage"), pageMessage.key, pageMessage.values);
+  const stage = /ocr/i.test(message)
     ? "OCR"
     : /complete|finished/i.test(message)
       ? "Complete"
@@ -268,7 +302,11 @@ function setStatus(message, done = 0, total = 0) {
           : /open|start|read|extract/i.test(message)
             ? "Extracting document"
             : "Document status";
-  $("progressAnnouncement").textContent = message + ". " + $("progressPage").textContent;
+  setLocalizedText($("progressStage"), stage);
+  setLocalizedText($("progressAnnouncement"), "{message}. {page}", {
+    message: localePhrase(localized.message, localized.values),
+    page: localePhrase(pageMessage.key, pageMessage.values),
+  });
 }
 function options() {
   return {
@@ -280,9 +318,10 @@ function options() {
 function setWorking(value) {
   state.running = value;
   $("extractButton").disabled = value;
-  $("extractButtonLabel").textContent = value
-    ? "Extraction in progress"
-    : "Start extraction";
+  setLocalizedText(
+    $("extractButtonLabel"),
+    value ? "Extraction in progress" : "Start extraction",
+  );
   $("pauseButton").classList.toggle("hidden", !value);
   $("cancelButton").classList.toggle("hidden", !value);
   $("workspace").setAttribute("aria-busy", String(value));
@@ -367,6 +406,14 @@ function setReviewItemDisposition(itemId, action, nextLatex) {
 function selectedReviewItem() {
   return state.reviewQueue.find((item) => item.id === state.selectedReviewId) || state.reviewQueue[0] || null;
 }
+
+function reviewDispositionMessage(disposition) {
+  if (disposition === "accepted") return "Accepted";
+  if (disposition === "review") return "Review";
+  if (disposition === "preserved") return "Preserved";
+  return disposition;
+}
+
 async function waitForCheckpointWrites() {
   await Promise.allSettled([...state.checkpointWrites]);
   if (state.checkpointError) throw state.checkpointError;
@@ -380,14 +427,17 @@ function documentComplexity() {
 }
 
 function syncDocumentSummary() {
-  const pages = state.pageCount ? `${state.pageCount.toLocaleString()} pages` : "—";
-  const size = state.fileSize ? `${(state.fileSize / 1048576).toFixed(1)} MB` : "—";
+  const pages = state.pageCount || 0;
+  const size = state.fileSize ? (state.fileSize / 1048576).toFixed(1) : null;
   const pageNode = $("documentPageCount");
   const sizeNode = $("documentFileSize");
   const complexityNode = $("documentComplexity");
-  if (pageNode) pageNode.textContent = state.pageCount ? state.pageCount.toLocaleString() : "—";
-  if (sizeNode) sizeNode.textContent = state.fileSize ? size : "—";
-  if (complexityNode) complexityNode.textContent = documentComplexity();
+  if (pageNode) pageNode.textContent = state.pageCount ? state.pageCount.toLocaleString(getLocale()) : "—";
+  if (sizeNode) {
+    if (size === null) sizeNode.textContent = "—";
+    else setLocalizedText(sizeNode, "{count} MB", { count: size });
+  }
+  if (complexityNode) setLocalizedText(complexityNode, documentComplexity());
   return { pages, size };
 }
 
@@ -405,22 +455,30 @@ function syncDocumentScope() {
   if (!summary) return;
 
   if (!state.pageCount) {
-    summary.textContent = custom
-      ? "Open a PDF before entering a range."
-      : "All pages will be selected when a PDF is opened.";
+    setLocalizedText(
+      summary,
+      custom
+        ? "Open a PDF before entering a range."
+        : "All pages will be selected when a PDF is opened.",
+    );
     return;
   }
   if (!custom) {
-    summary.textContent = `All ${state.pageCount.toLocaleString()} pages selected.`;
+    setLocalizedText(summary, "All {count} pages selected.", {
+      count: state.pageCount,
+    });
     pageRange?.removeAttribute("aria-invalid");
     return;
   }
   try {
     const pages = parsePageRange(pageRange?.value || "", state.pageCount);
-    summary.textContent = `${pages.length.toLocaleString()} of ${state.pageCount.toLocaleString()} pages selected.`;
+    setLocalizedText(summary, "{selected} of {total} pages selected.", {
+      selected: pages.length,
+      total: state.pageCount,
+    });
     pageRange?.removeAttribute("aria-invalid");
   } catch {
-    summary.textContent = "Enter a valid range, for example 1–5, 8, 12–20.";
+    setLocalizedText(summary, "Enter a valid range, for example 1–5, 8, 12–20.");
     pageRange?.setAttribute("aria-invalid", "true");
   }
 }
@@ -441,16 +499,38 @@ function activateWorkspace() {
   $("welcome").classList.add("hidden");
   $("workspace").classList.remove("hidden");
   $("fileName").textContent = state.fileName;
-  $("fileMeta").textContent =
-    `${summary.pages} · ${summary.size}`;
-  $("topFileName").textContent = state.fileName || "Markdown workspace";
-  $("topFileMeta").textContent = state.pageCount
-    ? `${state.pageCount} pages · ${(state.fileSize / 1048576).toFixed(1)} MB`
-    : "Review and export imported Markdown";
-  $("workspaceDocumentName").textContent = state.fileName || "Review, refine, export";
-  $("workspaceDocumentMeta").textContent = state.pageCount
-    ? `${summary.pages} · ${summary.size}`
-    : "Review and export imported Markdown";
+  const pageLabel = summary.pages
+    ? localePhrase("{count} pages", {
+        count: summary.pages,
+      })
+    : "—";
+  const sizeLabel = summary.size
+    ? localePhrase("{count} MB", { count: summary.size })
+    : "—";
+  setLocalizedText($("fileMeta"), "{pages} · {size}", {
+    pages: pageLabel,
+    size: sizeLabel,
+  });
+  if (state.fileName) $("topFileName").textContent = state.fileName;
+  else setLocalizedText($("topFileName"), "Markdown workspace");
+  if (state.pageCount) {
+    setLocalizedText($("topFileMeta"), "{pages} pages · {size} MB", {
+      pages: state.pageCount,
+      size: (state.fileSize / 1048576).toFixed(1),
+    });
+  } else {
+    setLocalizedText($("topFileMeta"), "Review and export imported Markdown");
+  }
+  if (state.fileName) $("workspaceDocumentName").textContent = state.fileName;
+  else setLocalizedText($("workspaceDocumentName"), "Review, refine, export");
+  if (state.pageCount) {
+    setLocalizedText($("workspaceDocumentMeta"), "{pages} · {size}", {
+      pages: pageLabel,
+      size: sizeLabel,
+    });
+  } else {
+    setLocalizedText($("workspaceDocumentMeta"), "Review and export imported Markdown");
+  }
   closeSettingsSheet();
   closeInspectorSheet();
   $("compactActionDock").classList.remove("hidden");
@@ -959,20 +1039,39 @@ function updateOutput() {
   const sourcePages = state.pageCount || processedPages;
   const selectedPagesCount = selectedPageNumbers().length;
   const issueCount = state.warnings.length + state.audit.issues.length;
-  $("documentStats").textContent = enabled
-    ? `${m.words.toLocaleString()} words · ${processedPages.toLocaleString()} of ${sourcePages.toLocaleString()} pages · ${state.audit.status}`
-    : "";
+  const auditStatusKey = qualityStatusMessage(state.audit.status);
+  if (enabled) {
+    setLocalizedText($("documentStats"), "{words} words · {processed} of {total} pages · {status}", {
+      words: m.words,
+      processed: processedPages,
+      total: sourcePages,
+      status: localePhrase(auditStatusKey),
+    });
+  } else {
+    $("documentStats").textContent = "";
+  }
   const statusClass = String(state.audit.status)
     .toLowerCase()
     .replace(/[^a-z-]/g, "");
   $("qualityBadge").className = `status-badge ${enabled ? statusClass : "neutral"}`;
-  $("qualityBadge").textContent = enabled ? state.audit.status : "Waiting";
+  setLocalizedText($("qualityBadge"), enabled ? auditStatusKey : "Waiting");
   $("qualityReport").innerHTML =
-    `<div class="metric-card metric-status"><dt>Quality status</dt><dd>${state.audit.status}</dd></div><div class="metric-card"><dt>Pages</dt><dd>${processedPages.toLocaleString()} / ${sourcePages.toLocaleString()}</dd></div><div class="metric-card"><dt>Selected</dt><dd>${selectedPagesCount.toLocaleString()}</dd></div><div class="metric-card"><dt>Words</dt><dd>${m.words.toLocaleString()}</dd></div><div class="metric-card${issueCount ? " quality-issue warning" : ""}"><dt>Issues</dt><dd>${issueCount}</dd></div><div class="metric-card"><dt>Headings</dt><dd>${m.headings}</dd></div><div class="metric-card"><dt>Tables</dt><dd>${m.tables}</dd></div><div class="metric-card"><dt>Equations</dt><dd>${m.equations}</dd></div><div class="metric-card"><dt>Visuals</dt><dd>${m.sourceVisuals}</dd></div>${state.audit.issues.map((issue) => `<div class="metric-card quality-issue ${issue.severity || "warning"}"><dt>${issue.code}</dt><dd>${issue.count}</dd></div>`).join("")}`;
+    `<div class="metric-card metric-status"><dt>Quality status</dt><dd>${state.audit.status}</dd></div><div class="metric-card"><dt>Pages</dt><dd>${processedPages.toLocaleString()} / ${sourcePages.toLocaleString()}</dd></div><div class="metric-card"><dt>Selected</dt><dd>${selectedPagesCount.toLocaleString()}</dd></div><div class="metric-card"><dt>Words</dt><dd>${m.words.toLocaleString()}</dd></div><div class="metric-card${issueCount ? " quality-issue warning" : ""}"><dt>Issues</dt><dd>${issueCount}</dd></div><div class="metric-card"><dt>Headings</dt><dd>${m.headings}</dd></div><div class="metric-card"><dt>Tables</dt><dd>${m.tables}</dd></div><div class="metric-card"><dt>Equations</dt><dd>${m.equations}</dd></div><div class="metric-card"><dt>Visuals</dt><dd>${m.sourceVisuals}</dd></div>${state.audit.issues.map((issue) => `<div class="metric-card quality-issue ${issue.severity || "warning"}"><dt data-generated-content>${issue.code}</dt><dd>${issue.count}</dd></div>`).join("")}`;
+  registerUiText($("qualityReport"));
+  setLocalizedText($("qualityReport").querySelector(".metric-status dd"), auditStatusKey);
   renderReviewQueue();
   renderSelectedReviewItem();
   renderMarkdown();
 }
+
+function qualityStatusMessage(status) {
+  const normalized = String(status).toLowerCase();
+  if (normalized.includes("pass") || normalized === "ok") return "Pass";
+  if (normalized.includes("warn")) return "Warning";
+  if (normalized.includes("fail") || normalized.includes("error")) return "Failed";
+  return status;
+}
+
 function renderMarkdown() {
   state.previewUrls.forEach(URL.revokeObjectURL);
   state.previewUrls = [];
@@ -1198,9 +1297,9 @@ function currentSemanticDocument() {
   );
 }
 
-function announceReview(message) {
+function announceReview(message, values = {}) {
   const region = $("reviewQueueAnnouncement");
-  if (region) region.textContent = message;
+  if (region) setLocalizedText(region, message, values);
 }
 
 function renderReviewQueue() {
@@ -1215,6 +1314,7 @@ function renderReviewQueue() {
   $("reviewQueuePreserved").textContent = String(summary.preserved || 0);
   if (!items.length) {
     list.innerHTML = '<p class="review-empty">No review items are currently queued.</p>';
+    registerUiText(list);
     panel.setAttribute("aria-busy", "false");
     return;
   }
@@ -1223,18 +1323,43 @@ function renderReviewQueue() {
   list.innerHTML = items.map((item, index) => {
     const active = item.id === selected?.id;
     return `
-      <article class="review-card ${active ? "active" : ""}" tabindex="0" role="button" data-review-id="${item.id}" aria-pressed="${active}" aria-current="${active ? "true" : "false"}" aria-label="Equation ${index + 1}, page ${item.page}, disposition ${item.disposition}. Activate to inspect source evidence and reconstruction.">
+      <article class="review-card ${active ? "active" : ""}" tabindex="0" role="button" data-review-index="${index}" data-review-id="${item.id}" aria-pressed="${active}" aria-current="${active ? "true" : "false"}" aria-label="">
         <header>
           <div>
-            <strong>Equation ${index + 1}</strong>
-            <small>Page ${item.page} · ${item.disposition}</small>
+            <strong data-equation-label></strong>
+            <small data-review-summary></small>
           </div>
-          <span class="status-badge ${item.disposition === "accepted" ? "pass" : item.disposition === "review" ? "warning" : "neutral"}">${item.disposition}</span>
+          <span class="status-badge ${item.disposition === "accepted" ? "pass" : item.disposition === "review" ? "warning" : "neutral"}" data-review-disposition></span>
         </header>
-        <div class="review-crop" aria-hidden="true">${item.sourceAsset?.id ? `<span>${item.sourceAsset.id}</span>` : "<span>Preserved source crop</span>"}</div>
+        <div class="review-crop" aria-hidden="true">${item.sourceAsset?.id ? `<span data-generated-content>${item.sourceAsset.id}</span>` : "<span>Preserved source crop</span>"}</div>
         <code class="review-latex">${DOMPurify.sanitize(item.candidate?.latex || "")}</code>
       </article>`;
   }).join("");
+  registerUiText(list);
+  list.querySelectorAll("[data-review-index]").forEach((card) => {
+    const index = Number(card.dataset.reviewIndex);
+    const item = items[index];
+    if (!item) return;
+    setLocalizedText(card.querySelector("[data-equation-label]"), "Equation {number}", {
+      number: index + 1,
+    });
+    setLocalizedText(card.querySelector("[data-review-summary]"), "Page {page} · {disposition}", {
+      page: item.page,
+      disposition: localePhrase(reviewDispositionMessage(item.disposition)),
+    });
+    const disposition = reviewDispositionMessage(item.disposition);
+    setLocalizedText(card.querySelector("[data-review-disposition]"), disposition);
+    setLocalizedAttribute(
+      card,
+      "aria-label",
+      "Equation {number}, page {page}, disposition {disposition}. Activate to inspect source evidence and reconstruction.",
+      {
+        number: index + 1,
+        page: item.page,
+        disposition: localePhrase(disposition),
+      },
+    );
+  });
   list.querySelectorAll("[data-review-id]").forEach((card) => {
     card.onclick = () => {
       state.selectedReviewId = card.dataset.reviewId;
@@ -1256,20 +1381,26 @@ function renderSelectedReviewItem() {
   if (!details) return;
   if (!item) {
     details.innerHTML = '<p class="review-empty">Select an equation to inspect its metadata.</p>';
+    registerUiText(details);
     announceReview("No equation is selected.");
     return;
   }
-  announceReview(`Showing equation on page ${item.page}. Source evidence and proposed reconstruction are both available below.`);
+  announceReview(
+    "Showing equation on page {page}. Source evidence and proposed reconstruction are both available below.",
+    { page: item.page },
+  );
   details.innerHTML = `
     <div class="review-detail-block">
       <div class="review-comparison" role="group" aria-label="Source and reconstruction comparison">
         <section aria-label="Preserved source evidence">
           <h3>Preserved source evidence</h3>
-          <p>Page ${item.page}; source crop ${DOMPurify.sanitize(item.sourceAsset?.id || "unavailable")}. The original evidence remains preserved.</p>
+          <p data-source-summary></p>
         </section>
         <section aria-label="Proposed reconstruction">
           <h3>Proposed reconstruction</h3>
-          <code>${DOMPurify.sanitize(item.candidate?.latex || "No reconstruction available.")}</code>
+          ${item.candidate?.latex
+            ? `<code>${DOMPurify.sanitize(item.candidate.latex)}</code>`
+            : '<p class="review-empty" data-no-reconstruction></p>'}
         </section>
       </div>
       <label class="field-label" for="reviewLatexEditor">Editable LaTeX<textarea id="reviewLatexEditor" rows="7">${DOMPurify.sanitize(item.candidate?.latex || "")}</textarea></label>
@@ -1281,14 +1412,31 @@ function renderSelectedReviewItem() {
       <details open class="review-meta">
         <summary>Metadata</summary>
         <dl>
-          <dt>Recognizer</dt><dd>${DOMPurify.sanitize(item.candidate?.provider || "unknown")}</dd>
-          <dt>Version</dt><dd>${DOMPurify.sanitize(item.candidate?.version || "unknown")}</dd>
-          <dt>Confidence</dt><dd>${Number(item.confidence?.overall || 0).toFixed(2)}</dd>
-          <dt>Disposition</dt><dd>${item.disposition}</dd>
-          <dt>Source asset</dt><dd>${DOMPurify.sanitize(item.sourceAsset?.id || "source-unknown")}</dd>
+          <dt>Recognizer</dt><dd data-generated-content>${DOMPurify.sanitize(item.candidate?.provider || "unknown")}</dd>
+          <dt>Version</dt><dd data-generated-content>${DOMPurify.sanitize(item.candidate?.version || "unknown")}</dd>
+          <dt>Confidence</dt><dd data-generated-content>${Number(item.confidence?.overall || 0).toFixed(2)}</dd>
+          <dt>Disposition</dt><dd data-review-disposition-value></dd>
+          <dt>Source asset</dt><dd data-generated-content>${DOMPurify.sanitize(item.sourceAsset?.id || "source-unknown")}</dd>
         </dl>
       </details>
     </div>`;
+  registerUiText(details);
+  const missingReconstruction = details.querySelector("[data-no-reconstruction]");
+  if (missingReconstruction) {
+    setLocalizedText(missingReconstruction, "No reconstruction available.");
+  }
+  setLocalizedText(
+    details.querySelector("[data-source-summary]"),
+    "Page {page}; source crop {source}. The original evidence remains preserved.",
+    {
+      page: item.page,
+      source: item.sourceAsset?.id || "unavailable",
+    },
+  );
+  setLocalizedText(
+    details.querySelector("[data-review-disposition-value]"),
+    reviewDispositionMessage(item.disposition),
+  );
   $("reviewAcceptButton")?.addEventListener("click", () => {
     const updated = setReviewItemDisposition(item.id, "accept");
     if (updated) {
@@ -1368,7 +1516,7 @@ function save(kind) {
 async function saveBundle(base) {
   try {
     $("downloadBundle").disabled = true;
-    $("downloadBundle").querySelector("small").textContent = "Building reconstructable bundle…";
+    setLocalizedText($("downloadBundle").querySelector("small"), "Building reconstructable bundle…");
     const { markdownToDocx } = await import("./features/export/docx-export.js");
     const semanticDocument = currentSemanticDocument();
     const docx = await markdownToDocx(
@@ -1397,14 +1545,13 @@ async function saveBundle(base) {
     toast("Bundle export failed: " + error.message, true);
   } finally {
     $("downloadBundle").disabled = false;
-    $("downloadBundle").querySelector("small").textContent = "DOCX, source evidence, provenance, and semantic assets";
+    setLocalizedText($("downloadBundle").querySelector("small"), "DOCX, source evidence, provenance, and semantic assets");
   }
 }
 async function saveDocx() {
   try {
     $("downloadDocx").disabled = true;
-    $("downloadDocx").querySelector("small").textContent =
-      "Building document…";
+    setLocalizedText($("downloadDocx").querySelector("small"), "Building document…");
     const { markdownToDocx } = await import("./features/export/docx-export.js");
     download(
       await markdownToDocx(
@@ -1428,8 +1575,10 @@ async function saveDocx() {
     toast(`DOCX export failed: ${error.message}`, true);
   } finally {
     $("downloadDocx").disabled = false;
-    $("downloadDocx").querySelector("small").textContent =
-      "Headings, tables, lists, equations, and source visuals";
+    setLocalizedText(
+      $("downloadDocx").querySelector("small"),
+      "Headings, tables, lists, equations, and source visuals",
+    );
   }
 }
 
@@ -1470,9 +1619,10 @@ function activateTab(tab) {
 
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
-  $("themeButton").setAttribute(
+  setLocalizedAttribute(
+    $("themeButton"),
     "aria-label",
-    `Switch to ${theme === "dark" ? "light" : "dark"} mode`,
+    theme === "dark" ? "Switch to light mode" : "Switch to dark mode",
   );
   document
     .querySelector('meta[name="theme-color"]')
@@ -1683,7 +1833,7 @@ function bind() {
   $("cancelButton").onclick = () => stop(true);
   $("restoreButton").onclick = () => restore();
   $("clearWorkspaceButton").onclick = async () => {
-    if (confirm("Remove the saved browser workspace?")) {
+    if (confirm(t("Remove the saved browser workspace?"))) {
       await clearWorkspace();
       state.logs = [];
       renderLog();
@@ -1695,8 +1845,10 @@ function bind() {
       toast("Stop extraction before resetting local data.", true);
       return;
     }
-    const message =
-      `Reset all local ${currentBrand().name} data in this browser? This removes saved documents, checkpoints, OCR language data, offline cache, and appearance preferences. Export anything you want to keep first.`;
+    const message = t(
+      "Reset all local {brand} data in this browser? This removes saved documents, checkpoints, OCR language data, offline cache, and appearance preferences. Export anything you want to keep first.",
+      { brand: currentBrand().name },
+    );
     if (!confirm(message)) return;
     try {
       await resetClientStorage();
