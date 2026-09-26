@@ -49,6 +49,7 @@ import {
   registerUiText,
   setLocalizedAttribute,
   setLocalizedText,
+  t,
 } from "./localization.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -1727,7 +1728,7 @@ function bind() {
   $("cancelButton").onclick = () => stop(true);
   $("restoreButton").onclick = () => restore();
   $("clearWorkspaceButton").onclick = async () => {
-    if (confirm("Remove the saved browser workspace?")) {
+    if (confirm(t("Remove the saved browser workspace?"))) {
       await clearWorkspace();
       state.logs = [];
       renderLog();
@@ -1739,8 +1740,10 @@ function bind() {
       toast("Stop extraction before resetting local data.", true);
       return;
     }
-    const message =
-      `Reset all local ${currentBrand().name} data in this browser? This removes saved documents, checkpoints, OCR language data, offline cache, and appearance preferences. Export anything you want to keep first.`;
+    const message = t(
+      "Reset all local {brand} data in this browser? This removes saved documents, checkpoints, OCR language data, offline cache, and appearance preferences. Export anything you want to keep first.",
+      { brand: currentBrand().name },
+    );
     if (!confirm(message)) return;
     try {
       await resetClientStorage();

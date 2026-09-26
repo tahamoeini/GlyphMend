@@ -305,6 +305,8 @@ const messages = [
   "Invalid page range: {value}",
   "Page range must be between 1 and {max}.",
   "Document summary",
+  "Remove the saved browser workspace?",
+  "Reset all local {brand} data in this browser? This removes saved documents, checkpoints, OCR language data, offline cache, and appearance preferences. Export anything you want to keep first.",
 ];
 
 export const en = Object.freeze(

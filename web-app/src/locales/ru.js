@@ -52,6 +52,7 @@ const translations = {
   "Workspace navigation": "Навигация по рабочей области",
   "Navigation & Source": "Навигация и источник",
   Views: "Представления",
+  "Local engine": "Локальный движок",
   Preview: "Предпросмотр",
   "Source PDF": "Исходный PDF",
   "Technical log": "Технический журнал",
@@ -331,6 +332,17 @@ const translations = {
   "Page range must be between 1 and {max}.":
     "Диапазон страниц должен быть от 1 до {max}.",
   "Document summary": "Сводка документа",
+  "Remove the saved browser workspace?": "Удалить сохранённую рабочую область в браузере?",
+  "Reset all local {brand} data in this browser? This removes saved documents, checkpoints, OCR language data, offline cache, and appearance preferences. Export anything you want to keep first.":
+    "Сбросить все локальные данные {brand} в этом браузере? Будут удалены сохранённые документы, контрольные точки, языковые данные OCR, автономный кэш и настройки внешнего вида. Сначала экспортируйте всё, что хотите сохранить.",
+  "pages processed": "страниц обработано",
+  "Workspace restored": "Рабочая область восстановлена",
+  "Extraction worker stopped unexpectedly.": "Обработчик извлечения неожиданно завершил работу.",
+  No: "Нет",
+  Upload: "Загрузка",
+  English: "Английский",
+  Chinese: "Китайский",
+  Russian: "Русский",
 };
 
 export const ru = Object.freeze(

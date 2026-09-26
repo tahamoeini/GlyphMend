@@ -51,6 +51,7 @@ const translations = {
   "Workspace navigation": "工作区导航",
   "Navigation & Source": "导航和源文件",
   Views: "视图",
+  "Local engine": "本地引擎",
   Preview: "预览",
   "Source PDF": "源 PDF",
   "Technical log": "技术日志",
@@ -315,6 +316,17 @@ const translations = {
   "Page range must be between 1 and {max}.":
     "页面范围必须介于 1 和 {max} 之间。",
   "Document summary": "文档摘要",
+  "Remove the saved browser workspace?": "要删除浏览器中保存的工作区吗？",
+  "Reset all local {brand} data in this browser? This removes saved documents, checkpoints, OCR language data, offline cache, and appearance preferences. Export anything you want to keep first.":
+    "要重置此浏览器中的所有 {brand} 本地数据吗？这会删除已保存的文档、检查点、OCR 语言数据、离线缓存和外观偏好。请先导出要保留的内容。",
+  "pages processed": "已处理页数",
+  "Workspace restored": "工作区已恢复",
+  "Extraction worker stopped unexpectedly.": "提取处理程序意外停止。",
+  No: "否",
+  Upload: "上传",
+  English: "英语",
+  Chinese: "中文",
+  Russian: "俄语",
 };
 
 export const zhCN = Object.freeze(
