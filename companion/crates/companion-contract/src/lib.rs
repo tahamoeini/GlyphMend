@@ -178,7 +178,12 @@ pub struct JobCreate {
 
 impl JobCreate {
     pub fn validate(&self) -> Result<(), ContractError> {
-        if self.document_name.len() > 255 || self.document_name.contains([char]47) || self.document_name.contains([char]92) || self.document_name.contains([char]58) || self.document_name.contains("://") || self.document_name.contains([char]0) {
+        if self.document_name.len() > 255
+            || self.document_name.contains('/')
+            || self.document_name.contains('\\')
+            || self.document_name.contains(':')
+            || self.document_name.contains('\0')
+        {
             return Err(ContractError::Limit("documentName"));
         }
         if self.capability_id.is_empty() || self.capability_id.len() > MAX_IDENTIFIER_BYTES {

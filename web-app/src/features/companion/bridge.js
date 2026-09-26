@@ -1,4 +1,6 @@
 import {
+  DOCUMENT_EXTRACTION_CAPABILITY,
+  DOCUMENT_OPTIONS_SCHEMA,
   COMPANION_IR_SCHEMA,
   COMPANION_LIMITS,
   COMPANION_PROTOCOL,
@@ -11,6 +13,11 @@ import {
   validateProviderResult,
   validateRegionMetadata,
 } from "./protocol.js";
+import { validateSemanticDocumentIR } from "../../shared/semantic-document-ir.js";
+
+function encodedSize(value) {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
 
 function timeoutSignal(timeout = COMPANION_LIMITS.controlTimeoutMs) {
   return AbortSignal.timeout(timeout);
@@ -179,6 +186,67 @@ export class LoopbackCompanionBridge {
       throw Object.assign(new Error("Companion IR result exceeds its size limit."), { code: "payload-too-large" });
     }
     return result;
+  }
+
+  async extractDocument({
+    bytes,
+    pageCount,
+    selectedPages,
+    ocrAccuracy = "fast",
+    useOcr = true,
+    forceOcr = false,
+    password,
+    onProgress = () => {},
+    signal,
+  } = {}) {
+    const input = await asBytes(bytes);
+    if (input.byteLength === 0 || input.byteLength > COMPANION_LIMITS.documentBytes) {
+      throw Object.assign(new Error("PDF size is outside the Companion limit."), { code: "payload-too-large" });
+    }
+    const metadata = {
+      schema: DOCUMENT_OPTIONS_SCHEMA,
+      selectedPages,
+      ocrAccuracy,
+      useOcr,
+      forceOcr,
+      ...(password ? { password } : {}),
+    };
+    const job = await this.createJob({
+      documentName: "document.pdf",
+      capabilityId: DOCUMENT_EXTRACTION_CAPABILITY,
+      inputKind: "document",
+      declaredBytes: input.byteLength,
+      pageCount,
+      metadata,
+    }, { signal });
+    let subscription;
+    try {
+      subscription = this.subscribe(job.jobId, onProgress, { signal });
+      for (let offset = 0, sequence = 0; offset < input.byteLength; offset += COMPANION_LIMITS.chunkBytes, sequence += 1) {
+        if (signal?.aborted) throw abortError();
+        const end = Math.min(offset + COMPANION_LIMITS.chunkBytes, input.byteLength);
+        await this.appendChunk(job.jobId, sequence, input.subarray(offset, end), { signal });
+      }
+      await this.completeInput(job.jobId, {
+        sha256Hex: await sha256Hex(input),
+        totalBytes: input.byteLength,
+      }, { signal });
+      await subscription.done;
+      if (signal?.aborted) throw abortError();
+      const response = await this.getResult(job.jobId, { signal });
+      if (!response.terminal || response.status !== "completed" || !response.result) {
+        throw new Error("Companion extraction did not complete successfully.");
+      }
+      return validateSemanticDocumentIR(response.result);
+    } catch (error) {
+      if (signal?.aborted || error?.name === "AbortError") {
+        await this.cancel(job.jobId).catch(() => undefined);
+        throw abortError();
+      }
+      throw error;
+    } finally {
+      subscription?.stop();
+    }
   }
 
   subscribe(jobId, onEvent, { signal, waitMs = COMPANION_LIMITS.eventWaitMs } = {}) {

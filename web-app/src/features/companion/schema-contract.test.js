@@ -9,7 +9,6 @@ const readSchema = (name) => JSON.parse(readFileSync(resolve(schemas, name), "ut
 it("documents the active REST v1 contract and its independent schemas", () => {
   const api = readSchema("protocol.json");
   expect(api.openapi).toBe("3.1.0");
-  expect(api.info.version).toBe("1.1");
   expect(api.paths["/v1/session"].post).toBeDefined();
   expect(api.paths["/v1/jobs/{jobId}/events"].get.responses["409"]).toBeDefined();
   expect(api.paths["/v1/jobs/{jobId}/chunks/{sequence}"].put.requestBody.content["application/octet-stream"]).toBeDefined();

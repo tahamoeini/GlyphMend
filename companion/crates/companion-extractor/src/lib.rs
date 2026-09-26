@@ -160,7 +160,7 @@ fn extract_document(
         }
         let object_count = object_types.values().map(|count| *count as usize).sum();
         let native_chars = native_segments.iter().map(|segment| segment.text.chars().count()).sum::<usize>();
-        let should_ocr = options.use_ocr && (options.force_ocr || native_chars < MIN_NATIVE_TEXT_CHARS);
+        let should_ocr = options.force_ocr || (options.use_ocr && native_chars < MIN_NATIVE_TEXT_CHARS);
         let fallback_reason = if !options.use_ocr {
             "ocr-disabled"
         } else if options.force_ocr {
@@ -196,8 +196,15 @@ fn extract_document(
     }
     drop(document);
 
-    let tessdata = resolve_tessdata(&options.ocr_accuracy)?;
-    let model_hash = sha256_file(&tessdata.join("eng.traineddata"))?;
+    let tessdata = if raw_pages.iter().any(|page| page.tiff.is_some()) {
+        Some(resolve_tessdata(&options.ocr_accuracy)?)
+    } else {
+        None
+    };
+    let model_hash = tessdata
+        .as_ref()
+        .map(|path| sha256_file(&path.join("eng.traineddata")))
+        .transpose()?;
     let completed = Arc::new(AtomicU32::new(0));
     let total_pages = raw_pages.len() as u32;
     let progress_sender = progress.clone();
@@ -215,7 +222,7 @@ fn extract_document(
             }
             if let Some(tiff) = raw.tiff.as_deref() {
                 match recognize_tiff(
-                    &tessdata,
+                    tessdata.as_deref().ok_or_else(|| anyhow!("OCR model path is unavailable"))?,
                     tiff,
                     raw.page_number,
                     raw.render_width,
@@ -230,7 +237,7 @@ fn extract_document(
                     Err(error) => raw.ocr_error = Some(error.to_string()),
                 }
             }
-            let page = page_ir(&raw, &options, &model_hash);
+            let page = page_ir(&raw, &options, model_hash.as_deref());
             let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
             let _ = progress_sender.send(Progress {
                 phase: if raw.tiff.is_some() { "ocr-and-reconstruction".into() } else { "native-text-and-reconstruction".into() },
@@ -367,7 +374,7 @@ fn recognize_tiff(
     Ok((segments, mean))
 }
 
-fn page_ir(raw: &RawPage, options: &DocumentExtractionOptions, model_hash: &str) -> Value {
+fn page_ir(raw: &RawPage, options: &DocumentExtractionOptions, model_hash: Option<&str>) -> Value {
     let used_ocr = raw.tiff.is_some() && raw.ocr_error.is_none();
     let segments = if raw.force_ocr && used_ocr {
         &raw.ocr_segments
@@ -449,7 +456,7 @@ fn page_ir(raw: &RawPage, options: &DocumentExtractionOptions, model_hash: &str)
                     companion_contract::OcrAccuracy::Fast => "fast",
                     companion_contract::OcrAccuracy::HighAccuracy => "high-accuracy"
                 },
-                "ocrModel": if raw.tiff.is_some() { model_hash } else { Value::Null.as_str().unwrap_or("") },
+                "ocrModel": if raw.tiff.is_some() { model_hash } else { None },
                 "ocrConfidence": raw.ocr_confidence,
                 "ocrError": raw.ocr_error
             }

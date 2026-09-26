@@ -102,6 +102,8 @@ const state = {
   previewRenderToken: 0,
   checkpointWrites: new Set(),
   checkpointError: null,
+  companionBridge: null,
+  companionCapabilities: [],
   reviewQueue: [],
   selectedReviewId: null,
   sheetReturnFocus: { sidebar: null, inspector: null },
@@ -849,6 +851,90 @@ function runBatch(batch, wanted) {
     }
   });
 }
+async function runCompanionBatch(batch, wanted) {
+  const bridge = state.companionBridge;
+  if (!bridge) throw new Error("No Companion connection is active.");
+  const supportsExtraction = state.companionCapabilities.some(
+    (capability) => capability.id === "glyphmend.document.extract.v2" && !capability.diagnosticOnly,
+  );
+  if (!supportsExtraction) throw new Error("The connected Companion does not support document extraction.");
+
+  const controller = new AbortController();
+  state.abortBatch = () => controller.abort();
+  try {
+    const document = await bridge.extractDocument({
+      bytes: state.pdfBytes,
+      pageCount: state.pageCount,
+      selectedPages: batch,
+      ocrAccuracy: $("companionOcrAccuracy").value,
+      useOcr: state.options.useOcr,
+      forceOcr: state.options.forceOcr,
+      password: $("pdfPassword").value || undefined,
+      signal: controller.signal,
+      onProgress: (event) => {
+        if (event.eventType !== "progress") return;
+        const progress = event.payload?.progress || {};
+        const done = wanted.filter((page) => state.pages[page]).length;
+        setStatus(
+          `Companion: ${progress.phase || "processing"} (${progress.completedPages || 0}/${progress.totalPages || batch.length})`,
+          done,
+          wanted.length,
+        );
+      },
+    });
+    if (controller.signal.aborted) throw Object.assign(new Error("Companion extraction stopped."), { aborted: true });
+    const byPage = new Map(document.pages.map((page) => [page.pageNumber, page]));
+    if (byPage.size !== batch.length || batch.some((page) => !byPage.has(page))) {
+      throw new Error("Companion returned an incomplete page set.");
+    }
+    const engine = document.metadata?.engine || { id: "glyphmend.pdfium-tesseract", version: "unknown" };
+    state.engine = engine.id;
+    for (const pageNumber of batch) {
+      const page = byPage.get(pageNumber);
+      const semanticDocument = createSemanticDocumentIR({
+        documentId: document.documentId,
+        metadata: document.metadata,
+        pages: [page],
+      });
+      const text = page.nodes
+        .map((node) => String(node.content?.markdown ?? node.content?.text ?? ""))
+        .filter(Boolean)
+        .join("\n\n");
+      const checkpoint = {
+        page: pageNumber,
+        text,
+        documentIR: null,
+        semanticDocument,
+        bodySize: new TextEncoder().encode(text).byteLength,
+        assets: [],
+        edges: {},
+        quality: {
+          engine: engine.id,
+          engineVersion: engine.version,
+          objectCount: page.layout?.pageObjectCount ?? null,
+          fallback: page.source?.fallback || null,
+        },
+        engine: engine.id,
+      };
+      state.pages[pageNumber] = checkpoint;
+      saveCheckpoint(checkpoint);
+      syncReviewQueue();
+      const done = wanted.filter((pageNo) => state.pages[pageNo]).length;
+      setStatus(`Companion extracted page ${pageNumber}`, done, wanted.length);
+      if (page.source?.fallback?.ocrError) {
+        log("companion-page-fallback", `OCR fallback on page ${pageNumber}`, page.source.fallback, "warning");
+      }
+      log("page-complete", `Extracted page ${pageNumber} with Companion`, checkpoint.quality, "debug");
+    }
+    return { failedPages: [] };
+  } catch (error) {
+    if (controller.signal.aborted) throw Object.assign(error, { aborted: true });
+    throw error;
+  } finally {
+    if (state.abortBatch) state.abortBatch = null;
+  }
+}
+
 async function extract() {
   if (!state.pdfBytes) return;
   let wanted;
@@ -863,6 +949,8 @@ async function extract() {
     return toast("Selected pages are already extracted.");
   }
   state.options = options();
+  let activeEngine = $("extractionEngine")?.value === "companion" ? "companion" : "browser";
+  state.engine = activeEngine === "companion" ? "glyphmend.pdfium-tesseract" : "mupdf-wasm";
   state.checkpointError = null;
   state.startedAt = new Date().toISOString();
   setWorking(true);
@@ -876,7 +964,7 @@ async function extract() {
     Math.min(100, Number($("checkpointPages").value) || 20),
   );
   const retriedPages = new Set();
-  log("extract-start", "Starting browser extraction", {
+  log("extract-start", `Starting ${activeEngine} extraction`, {
     selectedPages: wanted.length,
     resumedPages: wanted.length - remaining.length,
     batchSize,
@@ -892,7 +980,27 @@ async function extract() {
         { firstPage: batch[0], lastPage: batch.at(-1), pages: batch.length },
         "debug",
       );
-      const result = await runBatch(batch, wanted);
+      let result;
+      if (activeEngine === "companion") {
+        try {
+          result = await runCompanionBatch(batch, wanted);
+        } catch (error) {
+          if (error.aborted) throw error;
+          activeEngine = "browser";
+          state.engine = "mupdf-wasm";
+          const warning = {
+            type: "companion-fallback",
+            message: "Companion was unavailable or failed; this and remaining pages will use browser extraction.",
+            reason: error.message,
+          };
+          state.warnings.push(warning);
+          log("engine-fallback", warning.message, { reason: error.message }, "warning");
+          setStatus("Companion unavailable; switching to browser extraction…", wanted.filter((page) => state.pages[page]).length, wanted.length);
+          result = await runBatch(batch, wanted);
+        }
+      } else {
+        result = await runBatch(batch, wanted);
+      }
       const retryPages = result.failedPages.filter(
         (page) => !retriedPages.has(page),
       );
@@ -1768,9 +1876,17 @@ function bindCompanionControl(buttonId, endpointId, codeId, statusId) {
       const { createCompanionBridge } = await import("./features/companion/bridge.js");
       const bridge = await createCompanionBridge();
       const connection = await bridge.connect(endpoint, pairingCode);
-      if (connection.status === "connected") state.companionBridge = bridge;
+      if (connection.status === "connected") {
+        state.companionBridge = bridge;
+        state.companionCapabilities = connection.capabilities || [];
+      }
+      const canExtract = state.companionCapabilities.some(
+        (capability) => capability.id === "glyphmend.document.extract.v2" && !capability.diagnosticOnly,
+      );
       status.textContent = connection.status === "connected"
-        ? "Companion connected for diagnostics; it does not accelerate extraction yet."
+        ? canExtract
+          ? "Companion connected. Select it for an extraction job; browser remains the default."
+          : "Companion connected, but this version does not provide document extraction. Browser processing remains available."
         : `Companion ${connection.status}; browser processing remains available.`;
     } catch {
       status.textContent = "Companion unavailable; browser processing remains available.";
@@ -1790,9 +1906,15 @@ async function connectCompanionFromFragment() {
     const connection = await bridge.connect(connectionData.endpoint, connectionData.pairingCode);
     if (connection.status !== "connected") return;
     state.companionBridge = bridge;
+    state.companionCapabilities = connection.capabilities || [];
+    const canExtract = state.companionCapabilities.some(
+      (capability) => capability.id === "glyphmend.document.extract.v2" && !capability.diagnosticOnly,
+    );
     for (const id of ["welcomeCompanionStatus", "settingsCompanionStatus"]) {
       const status = $(id);
-      if (status) status.textContent = "Companion connected for diagnostics; it does not accelerate extraction yet.";
+      if (status) status.textContent = canExtract
+        ? "Companion connected. Select it for an extraction job; browser remains the default."
+        : "Companion connected, but this version does not provide document extraction. Browser processing remains available.";
     }
   } catch {
     // Fragment pairing is optional; the manual connection controls remain available.

@@ -150,6 +150,7 @@
           <label class="field-label" for="welcomeCompanionEndpoint">Companion endpoint<input id="welcomeCompanionEndpoint" type="url" inputmode="url" placeholder="http://127.0.0.1:port"></label>
           <label class="field-label" for="welcomeCompanionCode">Pairing code<input id="welcomeCompanionCode" type="password" autocomplete="off"></label>
           <small id="welcomeCompanionStatus" aria-live="polite">Browser processing stays the default.</small>
+          <a href="https://github.com/tahamoeini/glyph-mend/releases" target="_blank" rel="noopener noreferrer">Download the optional Companion</a>
         </div>
         <div class="welcome-storage"><span><i aria-hidden="true"></i> Local store ready</span><button id="resetClientStorageButton" class="text-button danger-text" type="button">Reset local data</button></div>
       </div>
@@ -226,17 +227,19 @@
               </fieldset>
               <fieldset class="advanced-group">
                 <legend>Processing</legend>
+                <label class="field-label" for="extractionEngine">Extraction engine<select id="extractionEngine"><option value="browser" selected>Browser (default)</option><option value="companion">Optional Companion</option></select><small>If the Companion cannot connect or fails, this job continues in the browser.</small></label>
+                <label class="field-label" for="companionOcrAccuracy">Companion OCR accuracy<select id="companionOcrAccuracy"><option value="fast" selected>Fast (default)</option><option value="high-accuracy">High Accuracy</option></select><small>English OCR model; applies when Companion is selected.</small></label>
                 <label class="field-label" for="pdfPassword">PDF password<input id="pdfPassword" type="password" autocomplete="off" placeholder="For encrypted PDFs"></label>
                 <div class="field-grid"><label class="field-label" for="maxFileMb">Max file (MB)<input id="maxFileMb" type="number" min="1" max="4096" value="512"></label><label class="field-label" for="maxPages">Max pages<input id="maxPages" type="number" min="1" max="10000" value="2000"></label></div>
                 <label class="field-label" for="checkpointPages">Checkpoint every<input id="checkpointPages" type="number" min="1" max="100" value="20"><small>Pages per processing batch</small></label>
                 <label class="control-row compact"><span><strong>Strict mode</strong><small>Stop on the first page error</small></span><span class="switch"><input id="strict" type="checkbox"><i aria-hidden="true"></i></span></label>
-                <p class="technical-note">MuPDF WebAssembly and the bundled English OCR model run locally. Bounded batches release memory between checkpoints.</p>
+                <p class="technical-note">Browser extraction remains the complete, install-free default. The optional Companion uses local PDFium and English Tesseract OCR. Both feed the same Semantic Document IR and exports.</p>
               </fieldset>
               <fieldset class="advanced-group">
                 <legend>Optional companion</legend>
                 <label class="field-label" for="settingsCompanionEndpoint">Local endpoint<input id="settingsCompanionEndpoint" type="url" inputmode="url" placeholder="http://127.0.0.1:port"></label>
                 <label class="field-label" for="settingsCompanionCode">Pairing code<input id="settingsCompanionCode" type="password" autocomplete="off"></label>
-                <button id="settingsCompanionButton" class="quiet" type="button">Connect companion</button><small id="settingsCompanionStatus" aria-live="polite">Only use an endpoint and code shown by your local companion.</small>
+                <button id="settingsCompanionButton" class="quiet" type="button">Connect companion</button><small id="settingsCompanionStatus" aria-live="polite">Only use an endpoint and code shown by your local companion.</small><a href="https://github.com/tahamoeini/glyph-mend/releases" target="_blank" rel="noopener noreferrer">Download Companion builds</a>
               </fieldset>
             </div>
           </details>
