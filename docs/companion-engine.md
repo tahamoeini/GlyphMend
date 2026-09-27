@@ -21,12 +21,15 @@ PUT  /v1/jobs/:id/chunks/:sequence
 POST /v1/jobs/:id/complete
 GET  /v1/jobs/:id/events?after=N&limit=128&waitMs=15000
 GET  /v1/jobs/:id/result
+POST /v1/jobs/:id/result/acknowledge
 POST /v1/jobs/:id/cancel
 ```
 
 Document extraction uses the `glyphmend.document.extract.v2` capability, `inputKind=document`, PDF bytes uploaded in bounded chunks, and metadata such as `ocrAccuracy: "fast" | "high-accuracy"` and selected page numbers. Input is identified by its digest, not by a caller-supplied path or URL. Capability discovery reports engine version, supported IR version, and available OCR choices.
 
 Results are Semantic Document IR v2 and contain per-page source geometry, text and PDFium object bounds, engine/version metadata, OCR status, and fallback details. The browser validates the IR before updating checkpoints, then uses the existing shared Markdown and DOCX exporters. The Companion cannot replace the browser's export implementation.
+
+After the browser has durably checkpointed a completed batch, it acknowledges the result so the Companion can release its in-memory IR. Until acknowledgement, the result remains available for retry and resume.
 
 The wire schemas are under [`companion/schemas/`](../companion/schemas/). The shared IR schema and cross-runtime fixtures define the stable data contract.
 

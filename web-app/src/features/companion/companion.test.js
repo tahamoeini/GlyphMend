@@ -76,6 +76,18 @@ it("uses PUT chunks and ordered HTTP event polling instead of WebSocket", async 
   expect(events[0].sequence).toBe(1);
 });
 
+it("acknowledges a durably saved result", async () => {
+  const fetch = vi.fn().mockResolvedValue(response({}, true, 204));
+  const bridge = new LoopbackCompanionBridge(fetch);
+  bridge.endpoint = "http://127.0.0.1:49183";
+  bridge.session = { token: "token" };
+
+  await bridge.acknowledgeResult("completed-job");
+
+  expect(fetch.mock.calls[0][0]).toBe("http://127.0.0.1:49183/v1/jobs/completed-job/result/acknowledge");
+  expect(fetch.mock.calls[0][1].method).toBe("POST");
+});
+
 it("submits a document job and returns the shared Semantic Document IR", async () => {
   const fixturePath = resolve(process.cwd(), "..", "companion", "fixtures", "semantic-document-ir", "v2", "conformance.json");
   const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
@@ -95,12 +107,14 @@ it("submits a document job and returns the shared Semantic Document IR", async (
   bridge.endpoint = "http://127.0.0.1:49183";
   bridge.session = { token: "token" };
   const onProgress = vi.fn();
+  const onJobCreated = vi.fn();
   const document = await bridge.extractDocument({
     bytes: new Uint8Array([37, 80, 68, 70]),
     pageCount: 1,
     selectedPages: [1],
     ocrAccuracy: "fast",
     onProgress,
+    onJobCreated,
   });
   const createRequest = JSON.parse(fetch.mock.calls.find(([url]) => url.endsWith("/v1/jobs"))[1].body);
   expect(createRequest.documentName).toBe("document.pdf");
@@ -108,6 +122,7 @@ it("submits a document job and returns the shared Semantic Document IR", async (
   expect(createRequest.metadata).toMatchObject({ schema: DOCUMENT_OPTIONS_SCHEMA, ocrAccuracy: "fast" });
   expect(document.schemaVersion).toBe(2);
   expect(document.pages[0].nodes[0].content.markdown).toBe("A shared conformance sentence.");
+  expect(onJobCreated).toHaveBeenCalledWith("document-job");
   expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ eventType: "progress" }));
 });
 

@@ -512,17 +512,9 @@ impl JobManager {
                         .result
                         .as_ref()
                         .and_then(|result| match result.validate() {
-                            Ok(()) => {
-                                let response = JobResultResponse {
-                                    job_id,
-                                    status: JobState::Completed,
-                                    terminal: true,
-                                    result: Some(result.clone()),
-                                };
-                                serde_json::to_vec(&response)
-                                    .map_or(true, |bytes| bytes.len() > MAX_IR_RESULT_BYTES + 1024)
-                                    .then_some(ErrorCode::PayloadTooLarge)
-                            }
+                            Ok(()) => serde_json::to_vec(result)
+                                .map_or(true, |bytes| bytes.len() > MAX_IR_RESULT_BYTES)
+                                .then_some(ErrorCode::PayloadTooLarge),
                             Err(ContractError::Code(code)) => Some(code),
                             Err(ContractError::Limit(_)) => Some(ErrorCode::PayloadTooLarge),
                             Err(ContractError::IncompatibleProtocol { .. })
@@ -707,17 +699,17 @@ impl JobManager {
             .get(&job_id)
             .filter(|job| job.owner_session == owner_session)
             .ok_or(ContractError::Code(ErrorCode::NotFound))?;
+        if let Some(result) = &job.result {
+            if serde_json::to_vec(result).map_or(true, |bytes| bytes.len() > MAX_IR_RESULT_BYTES) {
+                return Err(ContractError::Code(ErrorCode::PayloadTooLarge));
+            }
+        }
         let response = JobResultResponse {
             job_id,
             status: job.state,
             terminal: is_terminal(job.state),
             result: job.result.clone(),
         };
-        if serde_json::to_vec(&response)
-            .map_or(true, |bytes| bytes.len() > MAX_IR_RESULT_BYTES + 1024)
-        {
-            return Err(ContractError::Code(ErrorCode::PayloadTooLarge));
-        }
         Ok(response)
     }
 

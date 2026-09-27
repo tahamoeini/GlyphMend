@@ -183,7 +183,10 @@ pub async fn start(
         .route("/v1/jobs/{job_id}/cancel", post(cancel_job))
         .route("/v1/jobs/{job_id}/events", get(events))
         .route("/v1/jobs/{job_id}/result", get(result))
-        .route("/v1/jobs/{job_id}/result/acknowledge", post(acknowledge_result))
+        .route(
+            "/v1/jobs/{job_id}/result/acknowledge",
+            post(acknowledge_result),
+        )
         .layer(RequestBodyLimitLayer::new(
             companion_contract::MAX_CONTROL_BYTES,
         ));
@@ -439,7 +442,11 @@ async fn acknowledge_result(
         Ok(session_id) => session_id,
         Err(response) => return response,
     };
-    match state.service.acknowledge_result(owner_session, job_id).await {
+    match state
+        .service
+        .acknowledge_result(owner_session, job_id)
+        .await
+    {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => contract_response(error),
     }

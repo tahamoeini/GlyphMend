@@ -12,6 +12,7 @@ it("documents the active REST v1 contract and its independent schemas", () => {
   expect(api.openapi).toBe("3.1.0");
   expect(api.paths["/v1/session"].post).toBeDefined();
   expect(api.paths["/v1/jobs/{jobId}/events"].get.responses["409"]).toBeDefined();
+  expect(api.paths["/v1/jobs/{jobId}/result/acknowledge"].post.responses["204"]).toBeDefined();
   expect(api.paths["/v1/jobs/{jobId}/chunks/{sequence}"].put.requestBody.content["application/octet-stream"]).toBeDefined();
   expect(api.components.schemas.ProtocolVersion.properties.major.const).toBe(COMPANION_PROTOCOL.major);
   expect(api.components.schemas.NegotiatedProtocolVersion.properties.minor.maximum).toBe(COMPANION_PROTOCOL.minor);

@@ -99,12 +99,15 @@ try {
   assert.equal(result.status, "completed");
   assert.equal(result.result.schema, "glyphmend.provider-result.v1");
   assert.equal(calls.filter((url) => url.includes("/chunks/")).length, 3);
+  await bridge.acknowledgeResult(job.jobId);
+  assert.equal((await bridge.getResult(job.jobId)).result, null, "acknowledgement should release the retained result");
 
   // The HTTP body limit applies before JSON parsing and authentication.
   const oversized = await fetch(endpoint + "/v1/jobs", { method: "POST", headers: { Origin: webOrigin, Authorization: bridge.headers().authorization, "content-type": "application/json" }, body: " ".repeat(65 * 1024) });
   assert.equal(oversized.status, 413);
 
   const waitingJob = await bridge.createJob({ ...jobRequest, documentName: "cancel.png", declaredBytes: 0, pageCount: 1, idempotencyKey: crypto.randomUUID() });
+  await assert.rejects(bridge.acknowledgeResult(waitingJob.jobId), { status: 400, code: "invalid-state" });
   const controller = new AbortController();
   const pendingPoll = bridge.subscribe(waitingJob.jobId, () => {}, { signal: controller.signal, waitMs: 15_000 });
   await Promise.race([pollStarted, delay(5_000).then(() => { throw new Error("long poll did not start"); })]);

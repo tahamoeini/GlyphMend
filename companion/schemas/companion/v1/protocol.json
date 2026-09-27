@@ -452,6 +452,47 @@
         }
       }
     },
+    "/v1/jobs/{jobId}/result/acknowledge": {
+      "post": {
+        "summary": "Acknowledge a saved result and release retained IR",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Result acknowledged"
+          },
+          "400": {
+            "description": "Job has not completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./error.json"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not owned by session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./error.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/jobs/{jobId}/cancel": {
       "post": {
         "summary": "Cancel job and signal provider",
