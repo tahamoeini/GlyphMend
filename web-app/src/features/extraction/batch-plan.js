@@ -11,3 +11,8 @@ export function planExtractionBatches(pages, { engine = "browser", batchSize = 2
   }
   return batches;
 }
+
+export function pendingExtractionPages(selectedPages, checkpoints = {}) {
+  if (!Array.isArray(selectedPages)) return [];
+  return selectedPages.filter((page) => !checkpoints?.[page]);
+}

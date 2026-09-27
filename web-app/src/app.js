@@ -12,7 +12,8 @@ import {
   qualityAudit,
 } from "./features/extraction/cleanup.js";
 import { documentIRFromPages } from "./features/extraction/document-ir.js";
-import { planExtractionBatches } from "./features/extraction/batch-plan.js";
+import { pendingExtractionPages, planExtractionBatches } from "./features/extraction/batch-plan.js";
+import { runWithBrowserFallback } from "./features/extraction/run-with-fallback.js";
 import {
   appendStoredLog,
   clearWorkspace,
@@ -972,7 +973,7 @@ async function extract() {
   } catch (error) {
     return toast(error.message, true);
   }
-  const remaining = wanted.filter((page) => !state.pages[page]);
+  const remaining = pendingExtractionPages(wanted, state.pages);
   if (!remaining.length) {
     finalize(wanted);
     return toast("Selected pages are already extracted.");
@@ -1011,22 +1012,22 @@ async function extract() {
       );
       let result;
       if (activeEngine === "companion") {
-        try {
-          result = await runCompanionBatch(batch, wanted);
-        } catch (error) {
-          if (error.aborted) throw error;
-          activeEngine = "browser";
-          state.engine = "mupdf-wasm";
-          const warning = {
-            type: "companion-fallback",
-            message: "Companion was unavailable or failed; this and remaining pages will use browser extraction.",
-            reason: error.message,
-          };
-          state.warnings.push(warning);
-          log("engine-fallback", warning.message, { reason: error.message }, "warning");
-          setStatus("Companion unavailable; switching to browser extraction…", wanted.filter((page) => state.pages[page]).length, wanted.length);
-          result = await runBrowserBatches(batch, wanted, batchSize);
-        }
+        result = await runWithBrowserFallback({
+          companion: () => runCompanionBatch(batch, wanted),
+          browser: () => runBrowserBatches(batch, wanted, batchSize),
+          onFallback: (error) => {
+            activeEngine = "browser";
+            state.engine = "mupdf-wasm";
+            const warning = {
+              type: "companion-fallback",
+              message: "Companion was unavailable or failed; this and remaining pages will use browser extraction.",
+              reason: error.message,
+            };
+            state.warnings.push(warning);
+            log("engine-fallback", warning.message, { reason: error.message }, "warning");
+            setStatus("Companion unavailable; switching to browser extraction…", wanted.filter((page) => state.pages[page]).length, wanted.length);
+          },
+        });
       } else {
         result = await runBatch(batch, wanted);
       }
