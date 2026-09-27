@@ -3,6 +3,8 @@
 #![forbid(unsafe_code)]
 
 use companion_contract::{InputChunk, InputComplete, JobCreate, MAX_CHUNK_BYTES};
+use companion_core::DiagnosticMockProvider;
+use companion_extractor::PdfiumTesseractProvider;
 use companion_service::{EventsPage, JobManager, JobResultResponse};
 use std::{sync::Arc, time::Duration};
 use tauri::State;
@@ -145,7 +147,13 @@ fn parse_job_id(value: &str) -> Result<Uuid, String> {
 }
 
 fn main() {
-    let service = Arc::new(JobManager::default());
+    let service = Arc::new(
+        JobManager::with_default_storage_providers(vec![
+            Arc::new(DiagnosticMockProvider),
+            Arc::new(PdfiumTesseractProvider),
+        ])
+        .expect("companion temporary storage must be creatable"),
+    );
     let cleanup_cancellation = CancellationToken::new();
     tauri::async_runtime::spawn(Arc::clone(&service).cleanup_loop(cleanup_cancellation.clone()));
     tauri::Builder::default()

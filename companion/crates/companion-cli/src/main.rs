@@ -71,10 +71,7 @@ fn parse_web_origin(arguments: &[String]) -> Result<String> {
 fn open_browser(url: &str) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
-            .args(["/C", "start", "", url])
-            .spawn()
-            .map(|_| ())
+        Command::new("explorer.exe").arg(url).spawn().map(|_| ())
     }
     #[cfg(target_os = "macos")]
     {
