@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, it } from "vitest";
-import { COMPANION_IR_SCHEMA, COMPANION_PROTOCOL, REGION_INPUT_SCHEMA, DOCUMENT_OPTIONS_SCHEMA } from "./protocol.js";
+import { COMPANION_IR_SCHEMA, COMPANION_PROTOCOL, REGION_INPUT_SCHEMA } from "./protocol.js";
+import { validateSemanticDocumentIR } from "../../shared/semantic-document-ir.js";
 
 const schemas = resolve(process.cwd(), "..", "companion", "schemas", "companion", "v1");
 const readSchema = (name) => JSON.parse(readFileSync(resolve(schemas, name), "utf8"));
@@ -16,7 +17,7 @@ it("documents the active REST v1 contract and its independent schemas", () => {
   expect(api.components.schemas.NegotiatedProtocolVersion.properties.minor.maximum).toBe(COMPANION_PROTOCOL.minor);
   expect(readSchema("session-request.json").properties.irSchemaVersion.const).toBe(COMPANION_IR_SCHEMA.version);
   expect(api.info.version).toBe("1.2");
-  expect(readSchema("job-create.json").allOf[1].then.properties.metadata.$ref).toContain(DOCUMENT_OPTIONS_SCHEMA);
+  expect(readSchema("job-create.json").allOf[1].then.properties.metadata.$ref).toContain("document-extraction-options/v2/schema.json");
   expect(readSchema("job-result.json").properties.result.oneOf).toHaveLength(3);
   expect(readSchema("region-input.json").properties.schema.const).toBe(REGION_INPUT_SCHEMA);
   expect(readSchema("provider-result.json").properties.source.properties.bbox.minItems).toBe(4);
@@ -25,4 +26,13 @@ it("documents the active REST v1 contract and its independent schemas", () => {
   expect(readSchema("provider-result.json").properties.observations.maxItems).toBe(256);
   expect(readSchema("events-page.json").required).toContain("historyTruncated");
   expect(readSchema("error.json").properties.earliestSequence).toBeDefined();
+});
+
+it("accepts the companion Rust Semantic Document IR v2 conformance fixture", () => {
+  const fixturePath = resolve(process.cwd(), "..", "companion", "fixtures", "semantic-document-ir", "v2", "conformance.json");
+  const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+  const document = validateSemanticDocumentIR(fixture);
+  expect(document.schema).toBe(COMPANION_IR_SCHEMA.id);
+  expect(document.schemaVersion).toBe(COMPANION_IR_SCHEMA.version);
+  expect(document.pages[0].nodes[0].source.extra.engine).toBe("glyphmend.pdfium-tesseract");
 });

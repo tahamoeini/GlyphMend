@@ -1,0 +1,232 @@
+name: Companion release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer without the companion-v prefix (for example 0.1.0-beta.1)
+        type: string
+        required: true
+        default: 0.1.0-beta.1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: companion-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  stable-promotion-gate:
+    runs-on: ubuntu-24.04
+    outputs:
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: version
+        name: Validate release version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          node -e 'const v=process.env.VERSION; if(!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?$/.test(v)) process.exit(1)'
+          if [[ "$VERSION" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+          echo "tag=companion-v$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Require measured stable-promotion evidence
+        if: steps.version.outputs.prerelease == 'false'
+        run: node companion/benchmarks/check-stable-promotion.mjs companion/benchmarks/results/stable-promotion.json
+
+  package:
+    needs: stable-promotion-gate
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            platform: windows-x64
+            pdfium_asset: pdfium-win-x64.tgz
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            platform: macos-x64
+            pdfium_asset: pdfium-mac-x64.tgz
+          - os: macos-15
+            target: aarch64-apple-darwin
+            platform: macos-arm64
+            pdfium_asset: pdfium-mac-arm64.tgz
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x64-glibc
+            pdfium_asset: pdfium-linux-x64.tgz
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            platform: linux-arm64-glibc
+            pdfium_asset: pdfium-linux-arm64.tgz
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: companion
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.97.0
+          target: ${{ matrix.target }}
+          cache: false
+      - name: Install Linux native libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config
+      - name: Install macOS native libraries
+        if: runner.os == 'macOS'
+        run: brew install tesseract leptonica
+      - name: Install Windows native libraries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          vcpkg install tesseract:x64-windows
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
+      - name: Build Companion
+        run: cargo build --locked --release --target "${{ matrix.target }}" -p companion-cli
+      - name: Assemble portable runtime and English OCR models
+        id: bundle
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          TARGET: ${{ matrix.target }}
+          PDFIUM_ASSET: ${{ matrix.pdfium_asset }}
+          OS_NAME: ${{ runner.os }}
+        run: |
+          set -euo pipefail
+          archive_dir="release"
+          package="glyphmend-companion-${PLATFORM}"
+          file_hash() { if [[ "$OS_NAME" == "macOS" ]]; then shasum -a 256 "$1" | cut -d' ' -f1; else sha256sum "$1" | cut -d' ' -f1; fi; }
+          mkdir -p "$archive_dir" "$package/lib" "$package/tessdata/fast" "$package/tessdata/best"
+          if [[ "$OS_NAME" == "Windows" ]]; then binary=$(find "target/$TARGET/release" -maxdepth 1 -type f -iname 'companion-cli.exe' -print -quit); cp "$binary" "$package/glyphmend-companion.exe"; cp "$VCPKG_ROOT/installed/x64-windows/bin/"*.dll "$package/"; else binary=$(find "target/$TARGET/release" -maxdepth 1 -type f -name 'companion-cli' -print -quit); cp "$binary" "$package/glyphmend-companion"; fi
+          test -n "$binary"
+          curl -fsSL "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8066/$PDFIUM_ASSET" -o /tmp/pdfium.tgz
+          mkdir -p /tmp/pdfium-runtime && tar -xzf /tmp/pdfium.tgz -C /tmp/pdfium-runtime
+          if [[ "$OS_NAME" == "Windows" ]]; then find /tmp/pdfium-runtime -iname 'pdfium.dll' -exec cp -L '{}' "$package/" \;; elif [[ "$OS_NAME" == "macOS" ]]; then find /tmp/pdfium-runtime -name 'libpdfium.dylib' -exec cp -L '{}' "$package/" \;; else find /tmp/pdfium-runtime -name 'libpdfium.so' -exec cp -L '{}' "$package/" \;; fi
+          if [[ -d /tmp/pdfium-runtime/licenses ]]; then cp -R /tmp/pdfium-runtime/licenses "$package/pdfium-licenses"; fi
+          pdfium_file=$(find "$package" -maxdepth 1 -type f \( -name 'pdfium.dll' -o -name 'libpdfium.dylib' -o -name 'libpdfium.so' \) -print -quit)
+          test -n "$pdfium_file"
+          if [[ "$OS_NAME" == "Linux" ]]; then
+            for binary_to_inspect in "$package/glyphmend-companion" "$pdfium_file"; do ldd "$binary_to_inspect" | awk '/=> \/|^\// {for(i=1;i<=NF;i++) if($i ~ /^\//) print $i}' | while read -r lib; do case "$lib" in */libc.so*|*/libm.so*|*/libpthread.so*|*/libdl.so*|*/librt.so*|*/ld-linux*) continue;; esac; [[ -f "$lib" ]] && cp -L "$lib" "$package/lib/"; done; done
+          elif [[ "$OS_NAME" == "macOS" ]]; then
+            { printf '%s\n' tesseract leptonica; brew deps --installed --recursive tesseract leptonica; } | sort -u | while read -r dep; do brew list --verbose "$dep"; done | grep -E '\.dylib$' | sort -u | while IFS= read -r lib; do [[ -f "$lib" ]] && cp -L "$lib" "$package/lib/"; done
+          fi
+          pdfium_hash=$(file_hash "$pdfium_file")
+          for model in fast best; do
+            repo="https://github.com/tesseract-ocr/tessdata_${model}.git"
+            commit=$(git ls-remote "$repo" HEAD | cut -f1)
+            test -n "$commit"
+            curl -fsSL "https://raw.githubusercontent.com/tesseract-ocr/tessdata_${model}/$commit/eng.traineddata" -o "$package/tessdata/$model/eng.traineddata"
+            curl -fsSL "https://raw.githubusercontent.com/tesseract-ocr/tessdata_${model}/$commit/LICENSE" -o "$package/tessdata/$model/LICENSE"
+            printf '%s\n' "$commit" > "$package/tessdata/$model/UPSTREAM_COMMIT"
+          done
+          cp DEPENDENCIES.md THIRD_PARTY_NOTICES.md "$package/"
+          cp resources/run-companion.sh resources/run-companion.bat "$package/"
+          chmod +x "$package/run-companion.sh"
+          printf 'GlyphMend Companion %s (%s)\n\nRun run-companion.sh on macOS/Linux or run-companion.bat on Windows. Both English OCR model sets are bundled. The companion binds only to loopback and opens the matching GlyphMend browser page for user-initiated pairing.\n' "$VERSION" "$PLATFORM" > "$package/README.txt"
+          printf '{"version":"%s","platform":"%s","target":"%s","pdfiumRelease":"chromium/8066","pdfiumArchive":"%s","pdfiumSha256":"%s","ocrModels":{"fast":{"commit":"%s","sha256":"%s"},"best":{"commit":"%s","sha256":"%s"}}}\n' "$VERSION" "$PLATFORM" "$TARGET" "$PDFIUM_ASSET" "$pdfium_hash" "$(cat "$package/tessdata/fast/UPSTREAM_COMMIT")" "$(file_hash "$package/tessdata/fast/eng.traineddata")" "$(cat "$package/tessdata/best/UPSTREAM_COMMIT")" "$(file_hash "$package/tessdata/best/eng.traineddata")" > "$package/runtime-manifest.json"
+          if [[ "$OS_NAME" == "Windows" ]]; then
+            powershell.exe -NoProfile -Command '$ErrorActionPreference="Stop"; $cert=$env:WINDOWS_SIGNING_PFX_BASE64; if(!$cert -or !$env:WINDOWS_SIGNING_PFX_PASSWORD){throw "Required Windows code-signing credentials are missing."}; [IO.File]::WriteAllBytes("signing.pfx",[Convert]::FromBase64String($cert)); $tool=(Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1).FullName; Get-ChildItem .\glyphmend-companion-windows-x64\*.exe, .\glyphmend-companion-windows-x64\*.dll -File | ForEach-Object { & $tool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f signing.pfx /p $env:WINDOWS_SIGNING_PFX_PASSWORD $_.FullName; if($LASTEXITCODE -ne 0){throw "Signing failed: $($_.Name)"}; & $tool verify /pa $_.FullName; if($LASTEXITCODE -ne 0){throw "Signature verification failed: $($_.Name)"} }; Remove-Item signing.pfx -Force'
+          elif [[ "$OS_NAME" == "macOS" ]]; then
+            if [[ -z "${APPLE_DEVELOPER_ID_P12_BASE64:-}" || -z "${APPLE_DEVELOPER_ID_P12_PASSWORD:-}" || -z "${APPLE_TEAM_ID:-}" || -z "${APPLE_ID:-}" || -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then echo 'Required Apple Developer ID or notarization credentials are missing.' >&2; exit 1; fi
+            echo "$APPLE_DEVELOPER_ID_P12_BASE64" | base64 -D > /tmp/developer-id.p12
+            security create-keychain -p "$APPLE_DEVELOPER_ID_P12_PASSWORD" build.keychain
+            security unlock-keychain -p "$APPLE_DEVELOPER_ID_P12_PASSWORD" build.keychain
+            security import /tmp/developer-id.p12 -k build.keychain -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$APPLE_DEVELOPER_ID_P12_PASSWORD" build.keychain
+            identity=$(security find-identity -v -p codesigning build.keychain | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)
+            test -n "$identity"
+            find "$package/lib" -type f -name '*.dylib' -print0 | while IFS= read -r -d '' lib; do codesign --force --timestamp --options runtime --sign "$identity" "$lib"; done
+            find "$package" -maxdepth 1 -type f -name '*.dylib' -print0 | while IFS= read -r -d '' lib; do codesign --force --timestamp --options runtime --sign "$identity" "$lib"; done
+            codesign --force --timestamp --options runtime --entitlements resources/macos-entitlements.plist --sign "$identity" "$package/glyphmend-companion"
+            codesign --verify --deep --strict --verbose=2 "$package/glyphmend-companion"
+          fi
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+          APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      - name: Create SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: companion/${{ steps.bundle.outputs.package }}
+          format: spdx-json
+          output-file: companion/${{ steps.bundle.outputs.package }}/SBOM.spdx.json
+          upload-artifact: false
+      - name: Package signed runtime, checksums, and SBOM
+        shell: bash
+        env:
+          PACKAGE: ${{ steps.bundle.outputs.package }}
+          PLATFORM: ${{ matrix.platform }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            powershell.exe -NoProfile -Command '$root="glyphmend-companion-windows-x64"; Get-ChildItem $root -Recurse -File | Where-Object {$_.Name -ne "SHA256SUMS"} | ForEach-Object { $hash=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(); $relative=$_.FullName.Substring((Resolve-Path $root).Path.Length+1); "{0}  {1}" -f $hash,$relative } | Set-Content "$root\SHA256SUMS" -Encoding ascii'
+            powershell.exe -NoProfile -Command 'Compress-Archive -Path ".\glyphmend-companion-windows-x64" -DestinationPath ".\release\glyphmend-companion-windows-x64.zip"'
+            powershell.exe -NoProfile -Command 'Get-FileHash .\release\glyphmend-companion-windows-x64.zip -Algorithm SHA256 | ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), $_.Path.Split([IO.Path]::DirectorySeparatorChar)[-1] } | Set-Content .\release\SHA256SUMS-windows-x64 -Encoding ascii'
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            (cd "$PACKAGE" && find . -type f ! -name SHA256SUMS -print0 | xargs -0 shasum -a 256 > SHA256SUMS)
+            ditto -c -k --keepParent "$PACKAGE" "release/$PACKAGE.zip"
+            xcrun notarytool submit "release/$PACKAGE.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+            (cd release && shasum -a 256 "$PACKAGE.zip" | sed "s#  #  #" > "SHA256SUMS-$PLATFORM")
+          else
+            (cd "$PACKAGE" && find . -type f ! -name SHA256SUMS -print0 | xargs -0 sha256sum > SHA256SUMS)
+            tar -czf "release/$PACKAGE.tar.gz" "$PACKAGE"
+            (cd release && sha256sum "$PACKAGE.tar.gz" > "SHA256SUMS-$PLATFORM")
+          fi
+      - name: Attest release assets
+        uses: actions/attest@v4
+        with:
+          subject-path: companion/release/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: companion-package-${{ matrix.platform }}
+          path: companion/release/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: [stable-promotion-gate, package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: companion-package-*
+          path: release
+          merge-multiple: true
+      - name: Create Companion GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.stable-promotion-gate.outputs.tag }}
+          PRERELEASE: ${{ needs.stable-promotion-gate.outputs.prerelease }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          args=("$TAG" release/* --title "$TAG" --target "$SOURCE_SHA" --generate-notes)
+          if [[ "$PRERELEASE" == "true" ]]; then args+=(--prerelease); fi
+          gh release create "${args[@]}"

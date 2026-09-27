@@ -26,7 +26,7 @@ POST /v1/jobs/:id/cancel
 
 Document extraction uses the `glyphmend.document.extract.v2` capability, `inputKind=document`, PDF bytes uploaded in bounded chunks, and metadata such as `ocrAccuracy: "fast" | "high-accuracy"` and selected page numbers. Input is identified by its digest, not by a caller-supplied path or URL. Capability discovery reports engine version, supported IR version, and available OCR choices.
 
-Results are Semantic Document IR v2 and contain per-page source geometry, text and object evidence, engine/version metadata, OCR status, and fallback details. The browser validates the IR before updating checkpoints, then uses the existing shared Markdown and DOCX exporters. The Companion cannot replace the browser's export implementation.
+Results are Semantic Document IR v2 and contain per-page source geometry, text and PDFium object bounds, engine/version metadata, OCR status, and fallback details. The browser validates the IR before updating checkpoints, then uses the existing shared Markdown and DOCX exporters. The Companion cannot replace the browser's export implementation.
 
 The wire schemas are under [`companion/schemas/`](../companion/schemas/). The shared IR schema and cross-runtime fixtures define the stable data contract.
 
@@ -47,4 +47,12 @@ Connection denial, missing or unsupported Companion APIs, protocol mismatch, Com
 
 Each signed archive contains the Companion executable, required PDFium and Tesseract runtime files, English Fast and Best models, third-party notices, SHA-256 checksums, and an SBOM. The manual release workflow also uploads workflow artifacts and GitHub Release assets with provenance attestations. It stops when Windows signing, or macOS signing/notarization, cannot complete.
 
+Run `.github/workflows/companion-release.yml` manually with a SemVer value such as `0.1.0-beta.1`; it creates a `companion-v...` prerelease when the version has a prerelease suffix. Set `WINDOWS_SIGNING_PFX_BASE64` and `WINDOWS_SIGNING_PFX_PASSWORD` as repository Actions secrets, plus `APPLE_DEVELOPER_ID_P12_BASE64`, `APPLE_DEVELOPER_ID_P12_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_ID`, and `APPLE_APP_SPECIFIC_PASSWORD`. A missing credential or failed signature/notarization prevents publishing. Linux packages are built on Ubuntu 24.04 and target glibc.
+
 The first release is a prerelease. Stable promotion requires repeatable, independently measured improvements by document class and no browser-only regression.
+
+## Local verification and benchmark fixtures
+
+From the repository root, run `node companion/benchmarks/generate-corpus.mjs` to rebuild the six synthetic CC0 PDFs, then run `node companion/benchmarks/check-corpus.mjs` to check labels and file hashes. Hand-authored gold text and structure labels are recorded before extractor output is evaluated. Benchmark reports include at least three paired browser/Companion runs per class, character and reading-order error, structure F1, latency, peak memory, tool versions, and browser-regression evidence. Stable promotion fails closed when results are missing or incomplete.
+
+Download archives provide `run-companion.sh` for macOS/Linux and `run-companion.bat` for Windows. Starting the Companion displays a one-use pairing code and opens the supported GlyphMend browser origin; connection and file submission remain user initiated.

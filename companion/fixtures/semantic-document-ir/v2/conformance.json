@@ -42,7 +42,16 @@
         "engine": "glyphmend.pdfium-tesseract",
         "engineVersion": "0.1.0",
         "pageObjectCount": 1,
-        "pageObjectTypes": { "Text": 1 }
+        "pageObjectTypes": { "Text": 1 },
+        "pageObjectGeometry": [
+          {
+            "id": "pdfium-object-1-0",
+            "type": "Text",
+            "bbox": [72, 72, 310, 90],
+            "coordinateSpace": "page-points"
+          }
+        ],
+        "pageObjectGeometryTruncated": false
       },
       "source": {
         "engine": "glyphmend.pdfium-tesseract",

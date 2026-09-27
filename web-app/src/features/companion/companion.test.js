@@ -1,6 +1,8 @@
 import { expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { LoopbackCompanionBridge, createCompanionProvider, readCompanionFragment } from "./bridge.js";
-import { REGION_INPUT_SCHEMA, companionStatus, validateEndpoint, validateProviderResult, validateRegionMetadata } from "./protocol.js";
+import { DOCUMENT_EXTRACTION_CAPABILITY, DOCUMENT_OPTIONS_SCHEMA, REGION_INPUT_SCHEMA, companionStatus, validateEndpoint, validateProviderResult, validateRegionMetadata } from "./protocol.js";
 
 function response(body = {}, ok = true, status = ok ? 200 : 400) {
   return { ok, status, json: async () => body };
@@ -71,6 +73,69 @@ it("uses PUT chunks and ordered HTTP event polling instead of WebSocket", async 
   expect(fetch.mock.calls[1][1].method).toBe("PUT");
   expect(fetch.mock.calls[3][0]).toContain("/events?after=0");
   expect(events[0].sequence).toBe(1);
+});
+
+it("submits a document job and returns the shared Semantic Document IR", async () => {
+  const fixturePath = resolve(process.cwd(), "..", "companion", "fixtures", "semantic-document-ir", "v2", "conformance.json");
+  const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+  const fetch = vi.fn(async (url) => {
+    if (url.endsWith("/v1/jobs")) return response({ jobId: "document-job" });
+    if (url.includes("/chunks/0")) return response({});
+    if (url.endsWith("/complete")) return response({}, true, 202);
+    if (url.includes("/events?")) return response({
+      events: [{ sequence: 1, eventType: "progress", payload: { progress: { phase: "ocr", completedPages: 1, totalPages: 1 } } }],
+      nextSequence: 1,
+      terminal: true,
+    });
+    if (url.endsWith("/result")) return response({ jobId: "document-job", status: "completed", terminal: true, result: fixture });
+    throw new Error(`Unexpected Companion request: ${url}`);
+  });
+  const bridge = new LoopbackCompanionBridge(fetch);
+  bridge.endpoint = "http://127.0.0.1:49183";
+  bridge.session = { token: "token" };
+  const onProgress = vi.fn();
+  const document = await bridge.extractDocument({
+    bytes: new Uint8Array([37, 80, 68, 70]),
+    pageCount: 1,
+    selectedPages: [1],
+    ocrAccuracy: "fast",
+    onProgress,
+  });
+  const createRequest = JSON.parse(fetch.mock.calls.find(([url]) => url.endsWith("/v1/jobs"))[1].body);
+  expect(createRequest.documentName).toBe("document.pdf");
+  expect(createRequest.capabilityId).toBe(DOCUMENT_EXTRACTION_CAPABILITY);
+  expect(createRequest.metadata).toMatchObject({ schema: DOCUMENT_OPTIONS_SCHEMA, ocrAccuracy: "fast" });
+  expect(document.schemaVersion).toBe(2);
+  expect(document.pages[0].nodes[0].content.markdown).toBe("A shared conformance sentence.");
+  expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ eventType: "progress" }));
+});
+
+it("cancels an uploaded document job when its extraction signal is aborted", async () => {
+  const fetch = vi.fn((url, { signal } = {}) => {
+    if (url.endsWith("/v1/jobs")) return Promise.resolve(response({ jobId: "cancelled-document-job" }));
+    if (url.includes("/events?")) return new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true });
+    });
+    if (url.includes("/chunks/0")) return new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true });
+    });
+    if (url.endsWith("/cancel")) return Promise.resolve(response({}));
+    throw new Error(`Unexpected Companion request: ${url}`);
+  });
+  const bridge = new LoopbackCompanionBridge(fetch);
+  bridge.endpoint = "http://127.0.0.1:49183";
+  bridge.session = { token: "token" };
+  const controller = new AbortController();
+  const pending = bridge.extractDocument({ bytes: new Uint8Array([1]), pageCount: 1, selectedPages: [1], signal: controller.signal });
+  await vi.waitFor(() => expect(fetch.mock.calls.some(([url]) => url.includes("/chunks/0"))).toBe(true));
+  controller.abort();
+  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  expect(fetch.mock.calls.some(([url]) => url.endsWith("/cancel"))).toBe(true);
+});
+
+it("keeps a denied or offline companion connection optional", async () => {
+  const bridge = new LoopbackCompanionBridge(vi.fn().mockRejectedValue(new TypeError("local network permission denied")));
+  expect(await bridge.connect("http://127.0.0.1:49183", "code")).toEqual({ status: "failed" });
 });
 
 it("adapts a connected Companion to the existing local provider shape", async () => {

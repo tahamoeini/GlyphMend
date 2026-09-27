@@ -872,7 +872,7 @@ async function runCompanionBatch(batch, wanted) {
       password: $("pdfPassword").value || undefined,
       signal: controller.signal,
       onProgress: (event) => {
-        if (event.eventType !== "progress") return;
+        if (event.eventType !== "job-progress") return;
         const progress = event.payload?.progress || {};
         const done = wanted.filter((page) => state.pages[page]).length;
         setStatus(

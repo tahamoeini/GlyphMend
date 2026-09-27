@@ -5,8 +5,8 @@ use bytes::Bytes;
 use companion_contract::{
     Capability, ContractError, ErrorCode, InputChunk, InputComplete, JobCreate, JobResult,
     ABANDONED_JOB_TTL_SECS, JOB_RETENTION_SECS, MAX_ACTIVE_JOBS, MAX_CONCURRENT_JOBS,
-    MAX_CONTROL_BYTES, MAX_DOCUMENT_BYTES, MAX_EVENT_QUEUE, MAX_IR_RESULT_BYTES, MAX_RUNTIME_BYTES, MAX_SESSION_BYTES,
-    PROVIDER_TIMEOUT_SECS,
+    MAX_CONTROL_BYTES, MAX_DOCUMENT_BYTES, MAX_EVENT_QUEUE, MAX_IR_RESULT_BYTES, MAX_RUNTIME_BYTES,
+    MAX_SESSION_BYTES, PROVIDER_TIMEOUT_SECS,
 };
 use companion_core::{
     CapabilityProvider, CoreError, DiagnosticMockProvider, JobState, ProviderInput,
@@ -436,7 +436,8 @@ impl JobManager {
             )
         };
         let worker_cancellation = cancellation.clone();
-        let (progress_sender, mut progress_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (progress_sender, mut progress_receiver) =
+            tokio::sync::mpsc::unbounded_channel::<companion_contract::Progress>();
         let progress_jobs = Arc::clone(&self.jobs);
         let progress_monitor = tokio::spawn(async move {
             while let Some(progress) = progress_receiver.recv().await {
@@ -712,7 +713,9 @@ impl JobManager {
             terminal: is_terminal(job.state),
             result: job.result.clone(),
         };
-        if serde_json::to_vec(&response).map_or(true, |bytes| bytes.len() > MAX_IR_RESULT_BYTES + 1024) {
+        if serde_json::to_vec(&response)
+            .map_or(true, |bytes| bytes.len() > MAX_IR_RESULT_BYTES + 1024)
+        {
             return Err(ContractError::Code(ErrorCode::PayloadTooLarge));
         }
         Ok(response)

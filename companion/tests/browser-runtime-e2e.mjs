@@ -64,7 +64,7 @@ try {
   const bridge = new LoopbackCompanionBridge(fetchWithOrigin);
   const connection = await bridge.connect(endpoint, pairingCode);
   assert.equal(connection.status, "connected");
-  assert.deepEqual(bridge.session.protocolVersion, { major: 1, minor: 1 });
+  assert.deepEqual(bridge.session.protocolVersion, { major: 1, minor: 2 });
   assert.ok(connection.capabilities.some(({ id }) => id === "glyphmend.diagnostic.mock.v1"));
   await assert.rejects(bridge.createJob({
     documentName: "unsupported.png", capabilityId: "glyphmend.unsupported.v1", inputKind: "region",

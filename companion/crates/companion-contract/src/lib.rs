@@ -213,7 +213,10 @@ impl JobCreate {
             region.validate()?;
         }
         if self.capability_id == DOCUMENT_EXTRACTION_CAPABILITY {
-            if self.input_kind != InputKind::Document || self.page_count == 0 || self.page_count > 2000 {
+            if self.input_kind != InputKind::Document
+                || self.page_count == 0
+                || self.page_count > 2000
+            {
                 return Err(ContractError::Code(ErrorCode::InvalidRequest));
             }
             let options: DocumentExtractionOptions = serde_json::from_value(self.metadata.clone())
@@ -245,15 +248,23 @@ pub struct DocumentExtractionOptions {
     pub password: Option<String>,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 impl DocumentExtractionOptions {
     pub fn validate(&self, page_count: u32) -> Result<(), ContractError> {
         if self.schema != DOCUMENT_INPUT_SCHEMA
             || self.selected_pages.is_empty()
             || self.selected_pages.len() > 2000
-            || self.selected_pages.iter().any(|page| *page == 0 || *page > page_count)
-            || self.password.as_ref().is_some_and(|password| password.len() > 4096)
+            || self
+                .selected_pages
+                .iter()
+                .any(|page| *page == 0 || *page > page_count)
+            || self
+                .password
+                .as_ref()
+                .is_some_and(|password| password.len() > 4096)
         {
             return Err(ContractError::Code(ErrorCode::InvalidRequest));
         }
@@ -458,7 +469,7 @@ impl ProviderResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum JobResult {
-    Provider(ProviderResult),
+    Provider(Box<ProviderResult>),
     SemanticDocument(serde_json::Value),
 }
 
@@ -469,17 +480,28 @@ impl JobResult {
             Self::SemanticDocument(document) => {
                 let valid = document.get("schema").and_then(serde_json::Value::as_str)
                     == Some(IR_SCHEMA_ID)
-                    && document.get("schemaVersion").and_then(serde_json::Value::as_u64)
+                    && document
+                        .get("schemaVersion")
+                        .and_then(serde_json::Value::as_u64)
                         == Some(IR_SCHEMA_VERSION as u64)
-                    && document.get("documentId").and_then(serde_json::Value::as_str)
+                    && document
+                        .get("documentId")
+                        .and_then(serde_json::Value::as_str)
                         .is_some_and(|value| !value.is_empty() && value.len() <= 256)
-                    && document.get("pages").and_then(serde_json::Value::as_array)
+                    && document
+                        .get("pages")
+                        .and_then(serde_json::Value::as_array)
                         .is_some_and(|pages| !pages.is_empty() && pages.len() <= 2000)
-                    && document.get("diagnostics").and_then(serde_json::Value::as_array).is_some();
+                    && document
+                        .get("diagnostics")
+                        .and_then(serde_json::Value::as_array)
+                        .is_some();
                 if !valid {
                     return Err(ContractError::Code(ErrorCode::InvalidRequest));
                 }
-                if serde_json::to_vec(document).map_or(true, |bytes| bytes.len() > MAX_IR_RESULT_BYTES) {
+                if serde_json::to_vec(document)
+                    .map_or(true, |bytes| bytes.len() > MAX_IR_RESULT_BYTES)
+                {
                     return Err(ContractError::Code(ErrorCode::PayloadTooLarge));
                 }
                 Ok(())

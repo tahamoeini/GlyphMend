@@ -2,8 +2,8 @@
 #![forbid(unsafe_code)]
 
 use companion_contract::{
-    Capability, ContractError, ErrorCode, InputKind, Progress, ProviderKind, ProviderMetadata,
-    ProviderObservation, ProviderResult, ProviderSource, JobResult, PROVIDER_RESULT_SCHEMA,
+    Capability, ContractError, ErrorCode, InputKind, JobResult, Progress, ProviderKind,
+    ProviderMetadata, ProviderObservation, ProviderResult, ProviderSource, PROVIDER_RESULT_SCHEMA,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -159,7 +159,7 @@ impl CapabilityProvider for DiagnosticMockProvider {
         };
         Ok(ProviderOutput {
             progress,
-            result: Some(JobResult::Provider(result)),
+            result: Some(JobResult::Provider(Box::new(result))),
         })
     }
 }
@@ -195,9 +195,13 @@ mod tests {
         let provider = DiagnosticMockProvider;
         assert!(provider.capability().diagnostic_only);
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        let output = provider.run(input(), CancellationToken::new(), sender).unwrap();
+        let output = provider
+            .run(input(), CancellationToken::new(), sender)
+            .unwrap();
         assert_eq!(output.progress.len(), 2);
-        let JobResult::Provider(result) = output.result.unwrap() else { panic!("expected provider result") };
+        let JobResult::Provider(result) = output.result.unwrap() else {
+            panic!("expected provider result")
+        };
         assert_eq!(result.provider.kind, ProviderKind::Deterministic);
         assert!(result.validate().is_ok());
     }

@@ -1,20 +1,26 @@
 # Companion dependency record
 
-Resolved versions are pinned in `Cargo.lock`; this record identifies the direct
-runtime surface reviewed for the first companion foundation.
+The Companion uses native system libraries at runtime. Release archives contain
+the platform PDFium library, Tesseract and Leptonica runtime libraries, and both
+English OCR model sets. The release workflow records resolved versions and
+SHA-256 digests in each archive.
 
-| Component | Resolved line | License |
+| Component | Source / pinned line | Purpose |
 | --- | --- | --- |
-| Rust toolchain | 1.97.0 | Rust/LLVM terms |
-| Tauri Rust shell | 2.11.6 | Apache-2.0 OR MIT |
-| Tauri web adapter | 2.11.1 | Apache-2.0 OR MIT |
-| Axum | 0.8.9 | MIT |
-| Tokio / tokio-util | 1.53.1 / 0.7.19 | MIT |
-| Serde / serde_json | 1.0.229 / 1.0.151 | MIT OR Apache-2.0 |
-| UUID / zeroize / getrandom | 1.26.1 / 1.9.0 / 0.3.4 | Apache-2.0 OR MIT |
-| bytes / tracing / tower-http | 1.12.1 / 0.1.44 / 0.7.1 | MIT |
+| Rust toolchain | 1.97.0 (`rust-toolchain.toml`) | Companion host and extractor |
+| `pdfium-render` | 0.9.4, `thread_safe` feature | PDF text, page geometry, objects, and rendering |
+| PDFium runtime | Chromium release `8066` | Native PDF engine, packaged beside the executable |
+| `leptess` / Tesseract | leptess 0.14.0; platform Tesseract package resolved at release | English OCR through Tesseract |
+| Leptonica | Platform package resolved at release | Image input for Tesseract |
+| English fast model | `tesseract-ocr/tessdata_fast`, `eng.traineddata` | Default Fast OCR choice |
+| English best model | `tesseract-ocr/tessdata_best`, `eng.traineddata` | Optional High Accuracy OCR choice |
+| REST service | Axum 0.8.9 / Tokio 1.53.1 | Authenticated loopback API |
 
-`cargo deny check` applies the deny-by-default advisory/license policy in
-`deny.toml`. No PDF library, OCR engine, model runtime, model weight, network
-client, telemetry SDK, shell plugin, filesystem plugin, or updater plugin is a
-companion dependency.
+`cargo deny check` applies the repository's advisory and license policy to the
+Rust dependency graph. Release archives also contain third-party notices, an
+SPDX SBOM, a runtime manifest, and checksums. The SBOM and runtime manifest
+capture platform-native libraries and model digests that Cargo metadata alone
+does not describe.
+
+The English model sets have different speed and accuracy profiles; see the
+[Tesseract data-file documentation](https://github.com/tesseract-ocr/tessdoc/blob/main/Data-Files.md).
