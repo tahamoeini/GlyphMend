@@ -33,6 +33,7 @@ export const ACTIVE_FORMAT_LIMITS = Object.freeze({
   maxPageAssetBytes: 128 * 1024 * 1024,
   maxAssetsPerPage: 256,
   maxReviewItemsPerPage: 256,
+  maxReviewQueueItems: 10_000,
   maxStructuredDepth: 32,
   maxStructuredNodes: 100_000,
   maxPasswordChars: 1024,

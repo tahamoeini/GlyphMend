@@ -188,6 +188,16 @@ export class LoopbackCompanionBridge {
     return result;
   }
 
+  async acknowledgeResult(jobId, { signal } = {}) {
+    const response = await this.fetch(this.endpoint + "/v1/jobs/" + jobId + "/result/acknowledge", {
+      method: "POST",
+      headers: this.headers(),
+      signal: requestSignal(signal),
+      body: controlBody({}),
+    });
+    if (response.status !== 204) await responseJson(response);
+  }
+
   async extractDocument({
     bytes,
     pageCount,
@@ -196,6 +206,7 @@ export class LoopbackCompanionBridge {
     useOcr = true,
     forceOcr = false,
     password,
+    onJobCreated = () => {},
     onProgress = () => {},
     signal,
   } = {}) {
@@ -219,6 +230,7 @@ export class LoopbackCompanionBridge {
       pageCount,
       metadata,
     }, { signal });
+    onJobCreated(job.jobId);
     let subscription;
     try {
       subscription = this.subscribe(job.jobId, onProgress, { signal });

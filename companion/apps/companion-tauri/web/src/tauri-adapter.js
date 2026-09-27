@@ -26,6 +26,7 @@ globalThis.GlyphMendCompanion = Object.freeze({
   appendChunk: (jobId, sequence, body) => invoke("companion_append_chunk", { jobId, sequence, body: Array.from(body) }),
   completeInput: (jobId, request) => invoke("companion_complete_job", { jobId, request }),
   getResult: (jobId) => invoke("companion_job_result", { jobId }),
+  acknowledgeResult: (jobId) => invoke("companion_acknowledge_result", { jobId }),
   subscribe,
   cancel: (jobId) => invoke("companion_cancel_job", { jobId }),
   disconnect: async () => {},

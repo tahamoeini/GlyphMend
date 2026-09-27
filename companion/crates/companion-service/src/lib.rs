@@ -721,6 +721,25 @@ impl JobManager {
         Ok(response)
     }
 
+    pub async fn acknowledge_result(
+        &self,
+        owner_session: Uuid,
+        job_id: Uuid,
+    ) -> Result<(), ContractError> {
+        self.cleanup_expired().await;
+        let mut jobs = self.jobs.lock().await;
+        let job = jobs
+            .get_mut(&job_id)
+            .filter(|job| job.owner_session == owner_session)
+            .ok_or(ContractError::Code(ErrorCode::NotFound))?;
+        if job.state != JobState::Completed {
+            return Err(ContractError::Code(ErrorCode::InvalidState));
+        }
+        job.result = None;
+        job.last_touched = Instant::now();
+        Ok(())
+    }
+
     pub async fn cleanup_loop(self: Arc<Self>, cancellation: CancellationToken) {
         loop {
             tokio::select! {
@@ -974,6 +993,28 @@ mod tests {
             .all(|events| events[0].sequence < events[1].sequence));
         assert!(page.terminal);
         assert!(manager.result(owner, job).await.unwrap().result.is_some());
+    }
+
+    #[tokio::test]
+    async fn acknowledges_results_only_after_completion_and_releases_retained_ir() {
+        let manager = manager();
+        let owner = Uuid::new_v4();
+        let job = create_completed(&manager, owner).await;
+
+        assert_eq!(
+            manager.acknowledge_result(owner, job).await,
+            Err(ContractError::Code(ErrorCode::InvalidState))
+        );
+        manager.run_queued(job).await.unwrap();
+        assert!(manager.result(owner, job).await.unwrap().result.is_some());
+
+        manager.acknowledge_result(owner, job).await.unwrap();
+        manager.acknowledge_result(owner, job).await.unwrap();
+        assert!(manager.result(owner, job).await.unwrap().result.is_none());
+        assert_eq!(
+            manager.acknowledge_result(Uuid::new_v4(), job).await,
+            Err(ContractError::Code(ErrorCode::NotFound))
+        );
     }
 
     #[tokio::test]

@@ -118,6 +118,18 @@ async fn companion_job_result(
 }
 
 #[tauri::command]
+async fn companion_acknowledge_result(
+    runtime: State<'_, Runtime>,
+    job_id: String,
+) -> Result<(), String> {
+    runtime
+        .0
+        .acknowledge_result(Uuid::nil(), parse_job_id(&job_id)?)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn companion_cancel_job(runtime: State<'_, Runtime>, job_id: String) -> Result<(), String> {
     runtime
         .0
@@ -145,6 +157,7 @@ fn main() {
             companion_complete_job,
             companion_job_events,
             companion_job_result,
+            companion_acknowledge_result,
             companion_cancel_job
         ])
         .run(tauri::generate_context!())

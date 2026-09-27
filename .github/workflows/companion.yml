@@ -2,7 +2,7 @@ name: GlyphMend Companion
 
 on:
   pull_request:
-    types: [opened]
+    types: [opened, synchronize, reopened]
     paths: ["companion/**", "docs/**", "README.md", ".github/workflows/companion.yml"]
   workflow_dispatch:
 permissions:
@@ -73,6 +73,10 @@ jobs:
             mkdir -p "target/debug/tessdata/$model"
             curl -fsSL "https://raw.githubusercontent.com/tesseract-ocr/tessdata_${model}/$commit/eng.traineddata" -o "target/debug/tessdata/$model/eng.traineddata"
           done
+      - name: Generate and verify labeled PDF fixtures
+        run: |
+          node benchmarks/generate-corpus.mjs
+          node benchmarks/check-corpus.mjs
       - run: node tests/browser-runtime-e2e.mjs
       - run: node tests/document-extraction-e2e.mjs
 

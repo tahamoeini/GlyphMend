@@ -12,6 +12,7 @@ import {
   qualityAudit,
 } from "./features/extraction/cleanup.js";
 import { documentIRFromPages } from "./features/extraction/document-ir.js";
+import { planExtractionBatches } from "./features/extraction/batch-plan.js";
 import {
   appendStoredLog,
   clearWorkspace,
@@ -861,6 +862,7 @@ async function runCompanionBatch(batch, wanted) {
 
   const controller = new AbortController();
   state.abortBatch = () => controller.abort();
+  let companionJobId;
   try {
     const document = await bridge.extractDocument({
       bytes: state.pdfBytes,
@@ -871,6 +873,7 @@ async function runCompanionBatch(batch, wanted) {
       forceOcr: state.options.forceOcr,
       password: $("pdfPassword").value || undefined,
       signal: controller.signal,
+      onJobCreated: (jobId) => { companionJobId = jobId; },
       onProgress: (event) => {
         if (event.eventType !== "job-progress") return;
         const progress = event.payload?.progress || {};
@@ -926,6 +929,20 @@ async function runCompanionBatch(batch, wanted) {
       }
       log("page-complete", `Extracted page ${pageNumber} with Companion`, checkpoint.quality, "debug");
     }
+    await waitForCheckpointWrites();
+    if (companionJobId && typeof bridge.acknowledgeResult === "function") {
+      try {
+        await bridge.acknowledgeResult(companionJobId);
+      } catch (error) {
+        const warning = {
+          type: "companion-result-retained",
+          message: "Companion kept a completed result because it could not confirm the saved checkpoint.",
+          reason: error.message,
+        };
+        state.warnings.push(warning);
+        log("companion-result-retained", warning.message, { reason: error.message }, "warning");
+      }
+    }
     return { failedPages: [] };
   } catch (error) {
     if (controller.signal.aborted) throw Object.assign(error, { aborted: true });
@@ -933,6 +950,15 @@ async function runCompanionBatch(batch, wanted) {
   } finally {
     if (state.abortBatch) state.abortBatch = null;
   }
+}
+
+async function runBrowserBatches(pages, wanted, batchSize) {
+  const failedPages = [];
+  for (const batch of planExtractionBatches(pages, { batchSize })) {
+    const result = await runBatch(batch, wanted);
+    failedPages.push(...result.failedPages);
+  }
+  return { failedPages };
 }
 
 async function extract() {
@@ -963,6 +989,7 @@ async function extract() {
     1,
     Math.min(100, Number($("checkpointPages").value) || 20),
   );
+  const batches = planExtractionBatches(remaining, { engine: activeEngine, batchSize });
   const retriedPages = new Set();
   log("extract-start", `Starting ${activeEngine} extraction`, {
     selectedPages: wanted.length,
@@ -971,12 +998,11 @@ async function extract() {
     options: state.options,
   });
   try {
-    for (let offset = 0; offset < remaining.length; offset += batchSize) {
+    for (const batch of batches) {
       if (!state.running) break;
-      const batch = remaining.slice(offset, offset + batchSize);
       log(
         "batch-start",
-        "Starting bounded extraction batch",
+        activeEngine === "companion" ? "Starting bounded Companion extraction batch" : "Starting bounded browser extraction batch",
         { firstPage: batch[0], lastPage: batch.at(-1), pages: batch.length },
         "debug",
       );
@@ -996,7 +1022,7 @@ async function extract() {
           state.warnings.push(warning);
           log("engine-fallback", warning.message, { reason: error.message }, "warning");
           setStatus("Companion unavailable; switching to browser extraction…", wanted.filter((page) => state.pages[page]).length, wanted.length);
-          result = await runBatch(batch, wanted);
+          result = await runBrowserBatches(batch, wanted, batchSize);
         }
       } else {
         result = await runBatch(batch, wanted);

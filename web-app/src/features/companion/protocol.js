@@ -58,9 +58,9 @@ function validSha256(value) {
 export function validateEndpoint(value) {
   let url;
   try { url = new URL(value); } catch { throw new TypeError("Enter a valid local companion endpoint."); }
-  const loopback = ["127.0.0.1", "[::1]"].includes(url.hostname);
+  const loopback = url.hostname === "127.0.0.1";
   if (url.protocol !== "http:" || !loopback || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
-    throw new TypeError("The companion endpoint must be an explicit http://127.0.0.1 or http://[::1] address.");
+    throw new TypeError("The companion endpoint must be an explicit http://127.0.0.1 address.");
   }
   return url.toString().replace(/\/$/, "");
 }

@@ -1,7 +1,7 @@
 name: GlyphMend browser app
 on:
   pull_request:
-    types: [opened]
+    types: [opened, synchronize, reopened]
     paths: ["branding.json", "brand/**", "web-app/**", ".github/workflows/web-app.yml"]
   workflow_dispatch:
 

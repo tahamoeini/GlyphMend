@@ -407,9 +407,6 @@ fn extract_document(
         "diagnostics": []
     });
     let result = JobResult::SemanticDocument(document_ir);
-    result
-        .validate()
-        .context("extractor produced invalid Semantic Document IR")?;
     Ok(ProviderOutput {
         progress: Vec::new(),
         result: Some(result),

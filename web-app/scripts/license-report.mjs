@@ -141,7 +141,6 @@ for (const [name, policy] of Object.entries(copiedRuntimeAssetPolicy)) {
   console.log(row([name, locked?.version || "missing", locked?.license || "UNKNOWN", policy.review]));
 }
 
-console.log("
 if (failures.length) {
   console.error("\nLicense gate failures:");
   for (const failure of failures) console.error(`- ${failure}`);

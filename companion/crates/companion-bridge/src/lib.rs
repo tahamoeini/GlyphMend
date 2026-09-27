@@ -11,7 +11,7 @@ use axum::{
 };
 use companion_contract::{
     ContractError, ErrorCode, InputChunk, InputComplete, JobCreate, ProtocolVersion,
-    SessionRequest, IR_SCHEMA_VERSION, PAIRING_TTL_SECS, SESSION_IDLE_SECS,
+    SessionRequest, CONTROL_TIMEOUT_SECS, IR_SCHEMA_VERSION, PAIRING_TTL_SECS, SESSION_IDLE_SECS,
 };
 use companion_service::{JobManager, JobResultResponse};
 use getrandom::fill;
@@ -31,6 +31,7 @@ use tokio_util::sync::CancellationToken;
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     limit::RequestBodyLimitLayer,
+    timeout::{RequestBodyDeadlineLayer, RequestBodyTimeoutLayer, TimeoutLayer},
     trace::TraceLayer,
 };
 use uuid::Uuid;
@@ -182,6 +183,7 @@ pub async fn start(
         .route("/v1/jobs/{job_id}/cancel", post(cancel_job))
         .route("/v1/jobs/{job_id}/events", get(events))
         .route("/v1/jobs/{job_id}/result", get(result))
+        .route("/v1/jobs/{job_id}/result/acknowledge", post(acknowledge_result))
         .layer(RequestBodyLimitLayer::new(
             companion_contract::MAX_CONTROL_BYTES,
         ));
@@ -190,9 +192,16 @@ pub async fn start(
         .layer(RequestBodyLimitLayer::new(
             companion_contract::MAX_CHUNK_BYTES,
         ));
+    let control_timeout = Duration::from_secs(CONTROL_TIMEOUT_SECS);
     let app = control_routes
         .merge(input_routes)
         .with_state(state)
+        .layer(RequestBodyTimeoutLayer::new(control_timeout))
+        .layer(RequestBodyDeadlineLayer::new(control_timeout))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            control_timeout,
+        ))
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
@@ -417,6 +426,21 @@ async fn result(
     };
     match state.service.result(owner_session, job_id).await {
         Ok(value) => Json::<JobResultResponse>(value).into_response(),
+        Err(error) => contract_response(error),
+    }
+}
+
+async fn acknowledge_result(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(job_id): Path<Uuid>,
+) -> Response {
+    let owner_session = match authenticated(&state, &headers).await {
+        Ok(session_id) => session_id,
+        Err(response) => return response,
+    };
+    match state.service.acknowledge_result(owner_session, job_id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => contract_response(error),
     }
 }

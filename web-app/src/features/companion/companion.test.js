@@ -21,6 +21,7 @@ it("rejects non-loopback endpoints before network access", async () => {
   expect(await bridge.connect("https://example.com", "code")).toEqual({ status: "failed" });
   expect(fetch).not.toHaveBeenCalled();
   expect(() => validateEndpoint("http://localhost:8765")).toThrow(/127/);
+  expect(() => validateEndpoint("http://[::1]:8765")).toThrow(/127/);
 });
 
 it("negotiates a session and retrieves provider capabilities", async () => {
