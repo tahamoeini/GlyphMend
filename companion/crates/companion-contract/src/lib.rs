@@ -6,7 +6,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub const PROTOCOL_MAJOR: u16 = 1;
-pub const PROTOCOL_MINOR: u16 = 2;
+pub const PROTOCOL_MINOR: u16 = 3;
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const IR_SCHEMA_ID: &str = "glyphmend.semantic-document-ir";
 pub const IR_SCHEMA_VERSION: u16 = 2;

@@ -1,5 +1,5 @@
 // Versioned browser-side constants and validators for the Companion REST API.
-export const COMPANION_PROTOCOL = Object.freeze({ major: 1, minor: 2 });
+export const COMPANION_PROTOCOL = Object.freeze({ major: 1, minor: 3 });
 export const COMPANION_IR_SCHEMA = Object.freeze({ id: "glyphmend.semantic-document-ir", version: 2 });
 export const COMPANION_RESULT_SCHEMA = "glyphmend.provider-result.v1";
 export const REGION_INPUT_SCHEMA = "glyphmend.region-input.v1";

@@ -855,6 +855,9 @@ function runBatch(batch, wanted) {
 async function runCompanionBatch(batch, wanted) {
   const bridge = state.companionBridge;
   if (!bridge) throw new Error("No Companion connection is active.");
+  if (wanted.length > 100 && bridge.session?.protocolVersion?.minor < 3) {
+    throw new Error("The connected Companion does not support bounded result acknowledgement.");
+  }
   const supportsExtraction = state.companionCapabilities.some(
     (capability) => capability.id === "glyphmend.document.extract.v2" && !capability.diagnosticOnly,
   );

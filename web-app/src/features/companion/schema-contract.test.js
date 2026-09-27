@@ -16,7 +16,7 @@ it("documents the active REST v1 contract and its independent schemas", () => {
   expect(api.components.schemas.ProtocolVersion.properties.major.const).toBe(COMPANION_PROTOCOL.major);
   expect(api.components.schemas.NegotiatedProtocolVersion.properties.minor.maximum).toBe(COMPANION_PROTOCOL.minor);
   expect(readSchema("session-request.json").properties.irSchemaVersion.const).toBe(COMPANION_IR_SCHEMA.version);
-  expect(api.info.version).toBe("1.2");
+  expect(api.info.version).toBe("1.3");
   expect(readSchema("job-create.json").allOf[1].then.properties.metadata.$ref).toContain("document-extraction-options/v2/schema.json");
   expect(readSchema("job-result.json").properties.result.oneOf).toHaveLength(3);
   expect(readSchema("region-input.json").properties.schema.const).toBe(REGION_INPUT_SCHEMA);
