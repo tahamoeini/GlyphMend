@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+env:
+  TESSDATA_FAST_COMMIT: 87416418657359cb625c412a48b6e1d6d41c29bd
+  TESSDATA_BEST_COMMIT: e12c65a915945e4c28e237a9b52bc4a8f39a0cec
+
 concurrency:
   group: companion-release-${{ inputs.version }}
   cancel-in-progress: false
@@ -24,6 +28,15 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+      - name: Require release dispatch from the default branch
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ "$RELEASE_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+            echo "Companion releases must be dispatched from the default branch ($DEFAULT_BRANCH)." >&2
+            exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -53,23 +66,29 @@ jobs:
             target: x86_64-pc-windows-msvc
             platform: windows-x64
             pdfium_asset: pdfium-win-x64.tgz
+            pdfium_sha256: 739a57d597d864297909cc40a2411eba728490c76a0fa25e3ea299c7f6b07020
           - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos-x64
             pdfium_asset: pdfium-mac-x64.tgz
+            pdfium_sha256: 841ecac278cdd46288dd065873522cf72f3996560d8978f473d336f01d59942c
           - os: macos-15
             target: aarch64-apple-darwin
             platform: macos-arm64
             pdfium_asset: pdfium-mac-arm64.tgz
+            pdfium_sha256: 336219e80580b93c6523f44db7dc1de59cc497b13a7390ddac84223f68ca162b
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             platform: linux-x64-glibc
             pdfium_asset: pdfium-linux-x64.tgz
+            pdfium_sha256: 0b43f405477cf2cfc4dbff06905093c3309756c6bca1fb9da99234a2ca97fed2
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             platform: linux-arm64-glibc
             pdfium_asset: pdfium-linux-arm64.tgz
+            pdfium_sha256: 0e6f90dccbc6b81fd5d7106abaf164c4222178f024c204d00d526b60fd2ad535
     runs-on: ${{ matrix.os }}
+    environment: companion-release
     timeout-minutes: 90
     defaults:
       run:
@@ -106,6 +125,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           TARGET: ${{ matrix.target }}
           PDFIUM_ASSET: ${{ matrix.pdfium_asset }}
+          PDFIUM_SHA256: ${{ matrix.pdfium_sha256 }}
           OS_NAME: ${{ runner.os }}
         run: |
           set -euo pipefail
@@ -116,6 +136,8 @@ jobs:
           if [[ "$OS_NAME" == "Windows" ]]; then binary=$(find "target/$TARGET/release" -maxdepth 1 -type f -iname 'companion-cli.exe' -print -quit); cp "$binary" "$package/glyphmend-companion.exe"; cp "$VCPKG_ROOT/installed/x64-windows/bin/"*.dll "$package/"; else binary=$(find "target/$TARGET/release" -maxdepth 1 -type f -name 'companion-cli' -print -quit); cp "$binary" "$package/glyphmend-companion"; fi
           test -n "$binary"
           curl -fsSL "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8066/$PDFIUM_ASSET" -o /tmp/pdfium.tgz
+          pdfium_archive_hash=$(file_hash /tmp/pdfium.tgz)
+          if [[ "$pdfium_archive_hash" != "$PDFIUM_SHA256" ]]; then echo 'PDFium archive SHA-256 did not match the pinned release digest.' >&2; exit 1; fi
           mkdir -p /tmp/pdfium-runtime && tar -xzf /tmp/pdfium.tgz -C /tmp/pdfium-runtime
           if [[ "$OS_NAME" == "Windows" ]]; then find /tmp/pdfium-runtime -iname 'pdfium.dll' -exec cp -L '{}' "$package/" \;; elif [[ "$OS_NAME" == "macOS" ]]; then find /tmp/pdfium-runtime -name 'libpdfium.dylib' -exec cp -L '{}' "$package/" \;; else find /tmp/pdfium-runtime -name 'libpdfium.so' -exec cp -L '{}' "$package/" \;; fi
           if [[ -d /tmp/pdfium-runtime/licenses ]]; then cp -R /tmp/pdfium-runtime/licenses "$package/pdfium-licenses"; fi
@@ -128,9 +150,8 @@ jobs:
           fi
           pdfium_hash=$(file_hash "$pdfium_file")
           for model in fast best; do
-            repo="https://github.com/tesseract-ocr/tessdata_${model}.git"
-            commit=$(git ls-remote "$repo" HEAD | cut -f1)
-            test -n "$commit"
+            if [[ "$model" == "fast" ]]; then commit="$TESSDATA_FAST_COMMIT"; else commit="$TESSDATA_BEST_COMMIT"; fi
+            [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
             curl -fsSL "https://raw.githubusercontent.com/tesseract-ocr/tessdata_${model}/$commit/eng.traineddata" -o "$package/tessdata/$model/eng.traineddata"
             curl -fsSL "https://raw.githubusercontent.com/tesseract-ocr/tessdata_${model}/$commit/LICENSE" -o "$package/tessdata/$model/LICENSE"
             printf '%s\n' "$commit" > "$package/tessdata/$model/UPSTREAM_COMMIT"
@@ -139,7 +160,7 @@ jobs:
           cp resources/run-companion.sh resources/run-companion.bat "$package/"
           chmod +x "$package/run-companion.sh"
           printf 'GlyphMend Companion %s (%s)\n\nRun run-companion.sh on macOS/Linux or run-companion.bat on Windows. Both English OCR model sets are bundled. The companion binds only to loopback and opens the matching GlyphMend browser page for user-initiated pairing.\n' "$VERSION" "$PLATFORM" > "$package/README.txt"
-          printf '{"version":"%s","platform":"%s","target":"%s","pdfiumRelease":"chromium/8066","pdfiumArchive":"%s","pdfiumSha256":"%s","ocrModels":{"fast":{"commit":"%s","sha256":"%s"},"best":{"commit":"%s","sha256":"%s"}}}\n' "$VERSION" "$PLATFORM" "$TARGET" "$PDFIUM_ASSET" "$pdfium_hash" "$(cat "$package/tessdata/fast/UPSTREAM_COMMIT")" "$(file_hash "$package/tessdata/fast/eng.traineddata")" "$(cat "$package/tessdata/best/UPSTREAM_COMMIT")" "$(file_hash "$package/tessdata/best/eng.traineddata")" > "$package/runtime-manifest.json"
+          printf '{"version":"%s","platform":"%s","target":"%s","pdfiumRelease":"chromium/8066","pdfiumArchive":"%s","pdfiumArchiveSha256":"%s","pdfiumSha256":"%s","ocrModels":{"fast":{"commit":"%s","sha256":"%s"},"best":{"commit":"%s","sha256":"%s"}}}\n' "$VERSION" "$PLATFORM" "$TARGET" "$PDFIUM_ASSET" "$pdfium_archive_hash" "$pdfium_hash" "$(cat "$package/tessdata/fast/UPSTREAM_COMMIT")" "$(file_hash "$package/tessdata/fast/eng.traineddata")" "$(cat "$package/tessdata/best/UPSTREAM_COMMIT")" "$(file_hash "$package/tessdata/best/eng.traineddata")" > "$package/runtime-manifest.json"
           if [[ "$OS_NAME" == "Windows" ]]; then
             powershell.exe -NoProfile -Command '$ErrorActionPreference="Stop"; $cert=$env:WINDOWS_SIGNING_PFX_BASE64; if(!$cert -or !$env:WINDOWS_SIGNING_PFX_PASSWORD){throw "Required Windows code-signing credentials are missing."}; [IO.File]::WriteAllBytes("signing.pfx",[Convert]::FromBase64String($cert)); $tool=(Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1).FullName; Get-ChildItem .\glyphmend-companion-windows-x64\*.exe, .\glyphmend-companion-windows-x64\*.dll -File | ForEach-Object { & $tool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f signing.pfx /p $env:WINDOWS_SIGNING_PFX_PASSWORD $_.FullName; if($LASTEXITCODE -ne 0){throw "Signing failed: $($_.Name)"}; & $tool verify /pa $_.FullName; if($LASTEXITCODE -ne 0){throw "Signature verification failed: $($_.Name)"} }; Remove-Item signing.pfx -Force'
           elif [[ "$OS_NAME" == "macOS" ]]; then
@@ -210,6 +231,7 @@ jobs:
   publish:
     needs: [stable-promotion-gate, package]
     runs-on: ubuntu-24.04
+    environment: companion-release
     permissions:
       contents: write
       actions: read
