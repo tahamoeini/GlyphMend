@@ -10,6 +10,8 @@ tauri-build = "2.5.1"
 
 [dependencies]
 companion-contract = { path = "../../../crates/companion-contract", version = "0.1.0" }
+companion-core = { path = "../../../crates/companion-core", version = "0.1.0" }
+companion-extractor = { path = "../../../crates/companion-extractor", version = "0.1.0" }
 companion-service = { path = "../../../crates/companion-service", version = "0.1.0" }
 serde.workspace = true
 tauri = { version = "2.11.6", default-features = false, features = ["wry"] }

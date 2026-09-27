@@ -508,6 +508,8 @@ name = "companion-tauri"
 version = "0.1.0"
 dependencies = [
  "companion-contract",
+ "companion-core",
+ "companion-extractor",
  "companion-service",
  "serde",
  "tauri",
