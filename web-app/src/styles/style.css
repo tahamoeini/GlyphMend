@@ -3721,8 +3721,12 @@
 
 @media (max-width: 540px) {
   .creator-attribution {
-    inset-inline-end: 8px;
+    inset-inline: 8px;
     bottom: 8px;
+    max-width: calc(100vw - 16px);
+    border-radius: 12px;
+    text-align: center;
+    white-space: normal;
     font-size: 10px;
   }
 }

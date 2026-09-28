@@ -31,6 +31,9 @@ for (const run of raw.runs ?? []) {
   if (!Number.isInteger(run.repeat) || run.repeat < 1) errors.push(key + ': repeat must be a positive integer');
   if (!['browser', 'companion'].includes(run.mode)) errors.push(key + ': mode must be browser or companion');
   if (!run.engineVersion || typeof run.engineVersion !== 'string') errors.push(key + ': engineVersion is required');
+  if (!run.startedAt || typeof run.startedAt !== 'string') errors.push(key + ': startedAt is required');
+  if (run.mode === 'browser' && run.ocrAccuracy !== raw.environment?.browserOcrModel) errors.push(key + ': browser OCR model does not match the run environment');
+  if (run.mode === 'companion' && run.ocrAccuracy !== raw.environment?.companionOcrAccuracy) errors.push(key + ': Companion OCR mode does not match the run environment');
   if (run.pageCount !== gold.pages) errors.push(key + ': pageCount does not match the labeled fixture');
   if (!Array.isArray(run.fallbackDetails)) errors.push(key + ': per-page fallbackDetails are required');
 }

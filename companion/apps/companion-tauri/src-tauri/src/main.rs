@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 const MAX_TAURI_IPC_PART_BYTES: usize = 64 * 1024;
 const MAX_TAURI_IPC_PARTS: usize = 16;
+const MAX_PENDING_TAURI_CHUNKS: usize = 8;
 
 struct PendingChunkParts {
     total_bytes: usize,
@@ -121,6 +122,9 @@ fn append_chunk_part(
             pending.remove(&key);
             return Err("input chunk exceeds 1 MiB".into());
         }
+    }
+    if !pending.contains_key(&key) && pending.len() >= MAX_PENDING_TAURI_CHUNKS {
+        return Err("too many incomplete Tauri input chunks".into());
     }
     let entry = pending.entry(key).or_insert_with(|| PendingChunkParts {
         total_bytes: 0,
@@ -254,7 +258,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_chunk_part, PendingChunkParts};
+    use super::{append_chunk_part, PendingChunkParts, MAX_PENDING_TAURI_CHUNKS};
     use std::collections::HashMap;
     use uuid::Uuid;
 
@@ -292,5 +296,26 @@ mod tests {
             None
         );
         assert!(append_chunk_part(&mut pending, job, 1, 0, 2, vec![9]).is_err());
+    }
+
+    #[test]
+    fn incomplete_chunk_assemblies_have_a_fixed_memory_bound() {
+        let mut pending: HashMap<(Uuid, u64), PendingChunkParts> = HashMap::new();
+        let job = Uuid::new_v4();
+        for sequence in 0..MAX_PENDING_TAURI_CHUNKS as u64 {
+            assert_eq!(
+                append_chunk_part(&mut pending, job, sequence, 0, 2, vec![1]).unwrap(),
+                None
+            );
+        }
+        assert!(append_chunk_part(
+            &mut pending,
+            job,
+            MAX_PENDING_TAURI_CHUNKS as u64,
+            0,
+            2,
+            vec![1],
+        )
+        .is_err());
     }
 }

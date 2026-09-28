@@ -555,13 +555,7 @@ async function main() {
   if (process.platform === "win32" && !executable("powershell.exe")) throw new Error("PowerShell is required for Windows memory sampling.");
   const browserExecutable = resolveBrowser();
   const companionExecutable = resolveCompanion();
-  const browserVersion = (await startVersionProbe(browserExecutable));
-  const appVersion = companionVersion(companionExecutable);
-  const revision = commitHash();
-
-  console.log("Running browser license, quality, test, and production-build checks.");
-  runBrowserChecks();
-
+  if (!fs.existsSync(companionExecutable)) throw new Error("Companion executable is missing: " + companionExecutable);
   const companionDirectory = path.dirname(companionExecutable);
   const modelRoot = path.resolve(process.env.GLYPHMEND_TESSDATA_DIR || path.join(companionDirectory, "tessdata"));
   const selectedModel = accuracy === "fast" ? "fast" : "best";
@@ -571,6 +565,12 @@ async function main() {
   const pdfiumPath = path.join(companionDirectory, pdfiumName);
   if (!fs.existsSync(pdfiumPath)) throw new Error("PDFium runtime is missing beside the Companion executable: " + pdfiumPath);
   const readHash = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  const browserVersion = await startVersionProbe(browserExecutable);
+  const appVersion = companionVersion(companionExecutable);
+  const revision = commitHash();
+
+  console.log("Running browser license, quality, test, and production-build checks.");
+  runBrowserChecks();
 
   let server;
   let browser;

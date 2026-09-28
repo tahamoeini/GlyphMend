@@ -55,6 +55,9 @@ jobs:
           VITE_LICENSE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/web-app/LICENSE
       - name: Test Tauri IPC adapter
         run: node --test companion/apps/companion-tauri/web/src/tauri-adapter.test.mjs
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+        working-directory: companion
       - name: Check Tauri Rust target
         run: cargo check --locked -p companion-tauri
         working-directory: companion
