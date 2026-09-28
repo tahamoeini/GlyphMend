@@ -39,6 +39,10 @@ See [Companion architecture and API](docs/companion-engine.md) and [release requ
 
 The reconstruction policy is conservative: preserve source evidence and expose uncertainty instead of inventing document structure. Markdown is the canonical text artifact; DOCX is a shared export layered on top.
 
+## Licensing
+
+The browser platform is licensed under AGPL-3.0-or-later; its [license](web-app/LICENSE) and deployed-version source links are available in the app footer. The optional Rust Companion is separately licensed under Apache-2.0 OR MIT.
+
 ## Documentation
 
 - [Browser operations](docs/browser.md)

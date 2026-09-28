@@ -13,17 +13,22 @@ use companion_core::{
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+#[cfg(test)]
+use std::time::SystemTime;
 use std::{
     collections::HashMap,
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant},
 };
 use tokio::sync::{Mutex, Notify, Semaphore};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+
+const MAX_RETAINED_RESULTS: usize = 8;
+const MAX_RETAINED_RESULT_BYTES: usize = 128 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,15 +117,21 @@ impl Drop for JobManager {
 
 impl Default for JobManager {
     fn default() -> Self {
-        Self::with_storage_dir(Arc::new(DiagnosticMockProvider), default_storage_dir())
-            .expect("companion temporary storage must be creatable")
+        Self::with_storage_dir(
+            Arc::new(DiagnosticMockProvider),
+            default_storage_dir().expect("companion temporary storage must be creatable"),
+        )
+        .expect("companion temporary storage must be creatable")
     }
 }
 
 impl JobManager {
     pub fn new(provider: Arc<dyn CapabilityProvider>) -> Self {
-        Self::with_storage_dir(provider, default_storage_dir())
-            .expect("companion temporary storage must be creatable")
+        Self::with_storage_dir(
+            provider,
+            default_storage_dir().expect("companion temporary storage must be creatable"),
+        )
+        .expect("companion temporary storage must be creatable")
     }
 
     pub fn with_storage_dir(
@@ -137,7 +148,7 @@ impl JobManager {
     pub fn with_default_storage_providers(
         providers: Vec<Arc<dyn CapabilityProvider>>,
     ) -> Result<Self, std::io::Error> {
-        Self::with_providers(providers, default_storage_dir())
+        Self::with_providers(providers, default_storage_dir()?)
     }
 
     pub fn with_providers(
@@ -538,7 +549,24 @@ impl JobManager {
             Ok(Err(error)) => Err(core_error_code(&error)),
             Err(_) => Err(ErrorCode::Internal),
         };
+        let incoming_result_bytes = match &output {
+            Ok(output) => output.result.as_ref().map_or(0, |result| {
+                serde_json::to_vec(result).map_or(usize::MAX, |bytes| bytes.len())
+            }),
+            Err(_) => 0,
+        };
         let mut jobs = self.jobs.lock().await;
+        let (retained_result_count, retained_result_bytes) = jobs
+            .values()
+            .filter_map(|record| record.result.as_ref())
+            .fold((0usize, 0usize), |(count, total), result| {
+                let size = serde_json::to_vec(result).map_or(usize::MAX, |bytes| bytes.len());
+                (count.saturating_add(1), total.saturating_add(size))
+            });
+        let can_retain_result = incoming_result_bytes == 0
+            || (retained_result_count < MAX_RETAINED_RESULTS
+                && retained_result_bytes.saturating_add(incoming_result_bytes)
+                    <= MAX_RETAINED_RESULT_BYTES);
         let job = jobs
             .get_mut(&job_id)
             .ok_or(ContractError::Code(ErrorCode::NotFound))?;
@@ -555,9 +583,21 @@ impl JobManager {
                         append_event(job_id, job, JobEvent::Progress(progress));
                         append_event(job_id, job, JobEvent::PageCompleted { page });
                     }
-                    job.result = output.result;
-                    job.state = JobState::Completed;
-                    append_event(job_id, job, JobEvent::Completed);
+                    if !can_retain_result {
+                        job.result = None;
+                        job.state = JobState::Failed;
+                        append_event(
+                            job_id,
+                            job,
+                            JobEvent::Failed {
+                                code: ErrorCode::Busy,
+                            },
+                        );
+                    } else {
+                        job.result = output.result;
+                        job.state = JobState::Completed;
+                        append_event(job_id, job, JobEvent::Completed);
+                    }
                 }
                 Err(code) => {
                     job.state = JobState::Failed;
@@ -786,22 +826,64 @@ impl JobManager {
     }
 }
 
-fn default_storage_dir() -> PathBuf {
-    let root = std::env::temp_dir().join("glyphmend").join("companion");
-    let _ = cleanup_stale_instances(&root, Duration::from_secs(ABANDONED_JOB_TTL_SECS));
-    root.join(format!("instance-{}", Uuid::new_v4()))
+fn default_storage_dir() -> std::io::Result<PathBuf> {
+    // Create one unpredictable, private directory directly under the OS temp
+    // directory. Reusing a predictable shared root would let another local user
+    // race replacements of instance directories and read staged documents.
+    let storage_dir = std::env::temp_dir().join(format!("glyphmend-companion-{}", Uuid::new_v4()));
+    create_private_dir(&storage_dir)?;
+    Ok(storage_dir)
 }
 
 fn create_private_dir(path: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(path)?;
+    #[cfg(unix)]
+    let create_result = {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700).create(path)
+    };
+    #[cfg(not(unix))]
+    let create_result = fs::create_dir(path);
+
+    match create_result {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let metadata = fs::symlink_metadata(path)?;
+            if !metadata.file_type().is_dir() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "companion storage path must be a real directory",
+                ));
+            }
+        }
+        Err(error) => return Err(error),
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+        let metadata = fs::symlink_metadata(path)?;
+        if !metadata.file_type().is_dir() || metadata.permissions().mode() & 0o077 != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "companion storage directory is not private",
+            ));
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let metadata = fs::symlink_metadata(path)?;
+        if !metadata.file_type().is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "companion storage path must be a real directory",
+            ));
+        }
     }
     Ok(())
 }
 
+#[cfg(test)]
 fn cleanup_stale_instances(root: &Path, ttl: Duration) -> std::io::Result<()> {
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,

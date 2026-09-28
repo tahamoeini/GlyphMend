@@ -25,6 +25,9 @@ const BOOLEAN_EXTRACTION_OPTIONS = new Set(
 
 export const ACTIVE_FORMAT_LIMITS = Object.freeze({
   maxPdfBytes: 512 * 1024 * 1024,
+  maxWorkspaceImportBytes: 768 * 1024 * 1024,
+  maxMarkdownImportBytes: 64 * 1024 * 1024,
+  maxBundleImportBytes: 800 * 1024 * 1024,
   maxBatchPages: 100,
   maxPageNumber: 2000,
   maxPageTextChars: 16 * 1024 * 1024,
@@ -39,6 +42,15 @@ export const ACTIVE_FORMAT_LIMITS = Object.freeze({
   maxPasswordChars: 1024,
   maxStatusChars: 512,
 });
+
+export function assertImportFileSize(file, maximumBytes, label) {
+  if (!file || !Number.isSafeInteger(file.size) || file.size < 0) {
+    throw new TypeError(`${label} has an invalid file size.`);
+  }
+  if (file.size > maximumBytes) {
+    throw new RangeError(`${label} exceeds the ${Math.floor(maximumBytes / (1024 * 1024))} MiB import limit.`);
+  }
+}
 
 function isPlainRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;

@@ -15,7 +15,29 @@ const manifestBytes = fs.readFileSync(manifestPath);
 const manifestHash = createHash('sha256').update(manifestBytes).digest('hex');
 const manifest = JSON.parse(manifestBytes);
 const errors = [];
+if (raw.schemaVersion !== 1) errors.push('raw run schemaVersion must be 1');
 if (raw.corpusManifestSha256 !== manifestHash) errors.push('raw run corpus hash does not match the checked-in manifest');
+const seenRunKeys = new Set();
+for (const run of raw.runs ?? []) {
+  const gold = manifest.documents.find((document) => document.documentClass === run.documentClass);
+  const key = [run.documentClass, run.repeat, run.mode].join(':');
+  if (!gold) {
+    errors.push('raw run contains an unknown document class: ' + run.documentClass);
+    continue;
+  }
+  if (seenRunKeys.has(key)) errors.push('raw run contains a duplicate record: ' + key);
+  seenRunKeys.add(key);
+  if (run.documentId !== gold.id) errors.push(key + ': documentId does not match the labeled fixture');
+  if (!Number.isInteger(run.repeat) || run.repeat < 1) errors.push(key + ': repeat must be a positive integer');
+  if (!['browser', 'companion'].includes(run.mode)) errors.push(key + ': mode must be browser or companion');
+  if (!run.engineVersion || typeof run.engineVersion !== 'string') errors.push(key + ': engineVersion is required');
+  if (run.pageCount !== gold.pages) errors.push(key + ': pageCount does not match the labeled fixture');
+  if (!Array.isArray(run.fallbackDetails)) errors.push(key + ': per-page fallbackDetails are required');
+}
+if (!Array.isArray(raw.browserRegression?.checkedClasses)
+  || classNames.some((name) => !raw.browserRegression.checkedClasses.includes(name))) {
+  errors.push('browser-regression evidence must cover all six labeled classes');
+}
 if (!raw.environment?.platform || !raw.environment?.browserVersion || !raw.environment?.companionVersion) errors.push('platform, browser version, and Companion version are required');
 if (raw.browserRegression?.passed !== true || !raw.browserRegression?.evidence) errors.push('passing browser-regression evidence is required');
 
@@ -89,8 +111,9 @@ function structureF1(expected, actual) {
 
 function measureRun(gold, run) {
   if (run.documentSha256 !== gold.sha256) throw new Error(`${gold.id}: run document hash does not match the labeled fixture`);
-  if (typeof run.recognizedText !== 'string' || !Array.isArray(run.readingOrder) || !Array.isArray(run.structureLabels)) {
-    throw new Error(`${gold.id}: run must include recognizedText, readingOrder, and structureLabels`);
+  if (typeof run.recognizedText !== 'string' || !Array.isArray(run.readingOrder)
+    || !Array.isArray(run.structureLabels) || !Array.isArray(run.fallbackDetails)) {
+    throw new Error(gold.id + ': run must include text, reading order, structure labels, and fallback details');
   }
   if (!Number.isFinite(run.elapsedMs) || run.elapsedMs < 0 || !Number.isFinite(run.peakMemoryMb) || run.peakMemoryMb < 0) {
     throw new Error(`${gold.id}: elapsedMs and peakMemoryMb must be non-negative finite numbers`);
@@ -98,8 +121,8 @@ function measureRun(gold, run) {
   return {
     characterErrorRate: errorRate(gold.text.join('\n'), run.recognizedText),
     wordErrorRate: wordErrorRate(gold.text.join(' '), run.recognizedText),
-    readingOrderError: readingOrderError(gold.text, run.readingOrder),
-    structureF1: structureF1(gold.structure, run.structureLabels),
+    readingOrderError: readingOrderError(gold.text, run.readingOrder.map(String)),
+    structureF1: structureF1(gold.structure, run.structureLabels.map(String)),
     latencyMs: run.elapsedMs,
     peakMemoryMb: run.peakMemoryMb,
   };
@@ -123,8 +146,18 @@ for (const name of classNames) {
     try {
       pairedRuns.push({
         repeat,
-        browser: measureRun(gold, browserRows[0]),
-        companion: measureRun(gold, companionRows[0]),
+        browser: {
+          ...measureRun(gold, browserRows[0]),
+          engineVersion: browserRows[0].engineVersion,
+          ocrAccuracy: browserRows[0].ocrAccuracy,
+          fallbackDetails: browserRows[0].fallbackDetails,
+        },
+        companion: {
+          ...measureRun(gold, companionRows[0]),
+          engineVersion: companionRows[0].engineVersion,
+          ocrAccuracy: companionRows[0].ocrAccuracy,
+          fallbackDetails: companionRows[0].fallbackDetails,
+        },
       });
     } catch (error) {
       errors.push(`${name}: repeat ${repeat}: ${error.message}`);
@@ -140,10 +173,33 @@ if (errors.length) {
   console.error(errors.map((error) => `- ${error}`).join('\n'));
   process.exit(1);
 }
+function median(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+for (const name of classNames) {
+  const pairs = results[name].pairedRuns;
+  results[name].median = {
+    browserLatencyMs: median(pairs.map((pair) => pair.browser.latencyMs)),
+    companionLatencyMs: median(pairs.map((pair) => pair.companion.latencyMs)),
+    browserPeakMemoryMb: median(pairs.map((pair) => pair.browser.peakMemoryMb)),
+    companionPeakMemoryMb: median(pairs.map((pair) => pair.companion.peakMemoryMb)),
+    browserCharacterErrorRate: median(pairs.map((pair) => pair.browser.characterErrorRate)),
+    companionCharacterErrorRate: median(pairs.map((pair) => pair.companion.characterErrorRate)),
+    browserReadingOrderError: median(pairs.map((pair) => pair.browser.readingOrderError)),
+    companionReadingOrderError: median(pairs.map((pair) => pair.companion.readingOrderError)),
+    browserStructureF1: median(pairs.map((pair) => pair.browser.structureF1)),
+    companionStructureF1: median(pairs.map((pair) => pair.companion.structureF1)),
+  };
+}
+
 const report = {
   schemaVersion: 1,
   corpusManifestSha256: manifestHash,
   environment: raw.environment,
+  browserRegressionEvidence: raw.browserRegression.evidence,
   classes: results,
 };
 fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });

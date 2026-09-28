@@ -31,6 +31,10 @@ const ENGINE_ID: &str = "glyphmend.pdfium-tesseract";
 const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const OCR_WORKERS: usize = 2;
 const MAX_PAGE_OBJECT_GEOMETRY: usize = 16;
+const MAX_PAGE_TEXT_SEGMENTS: usize = 50_000;
+const MAX_PAGE_TEXT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_PAGE_OBJECTS: usize = 50_000;
+const MAX_DOCUMENT_IR_BYTES: usize = 32 * 1024 * 1024;
 const MAX_RENDER_DIMENSION: f64 = 4096.0;
 const OCR_DPI: f64 = 300.0;
 const MIN_NATIVE_TEXT_CHARS: usize = 24;
@@ -231,11 +235,21 @@ fn extract_document(
             let width = f64::from(page.width().value);
             let height = f64::from(page.height().value);
             let mut native_segments = Vec::new();
+            let mut native_text_bytes = 0usize;
             let text_page = page.text().context("PDFium could not read page text")?;
             for (index, segment) in text_page.segments().iter().enumerate() {
+                if index >= MAX_PAGE_TEXT_SEGMENTS {
+                    return Err(anyhow!(
+                        "PDF page exceeds the text segment processing limit"
+                    ));
+                }
                 let text = segment.text().trim().to_owned();
                 if text.is_empty() {
                     continue;
+                }
+                native_text_bytes = native_text_bytes.saturating_add(text.len());
+                if native_text_bytes > MAX_PAGE_TEXT_BYTES {
+                    return Err(anyhow!("PDF page exceeds the extracted text byte limit"));
                 }
                 let bounds = segment.bounds();
                 let left = f64::from(bounds.left().value);
@@ -258,6 +272,9 @@ fn extract_document(
             let mut object_types = BTreeMap::new();
             let mut page_object_geometry = Vec::new();
             for (object_index, object) in page.objects().iter().enumerate() {
+                if object_index >= MAX_PAGE_OBJECTS {
+                    return Err(anyhow!("PDF page exceeds the object processing limit"));
+                }
                 let object_type = format!("{:?}", object.object_type());
                 *object_types.entry(object_type.clone()).or_insert(0) += 1;
                 if page_object_geometry.len() == MAX_PAGE_OBJECT_GEOMETRY {
@@ -353,9 +370,22 @@ fn extract_document(
     drop(work_sender);
 
     let mut pages = Vec::with_capacity(submitted_pages);
+    let mut document_ir_bytes = 0usize;
     for _ in 0..submitted_pages {
         match result_receiver.recv() {
-            Ok(Ok(page)) => pages.push(page),
+            Ok(Ok(page)) => {
+                let page_bytes = serde_json::to_vec(&page)
+                    .context("could not measure extracted page output")?
+                    .len();
+                document_ir_bytes = document_ir_bytes.saturating_add(page_bytes);
+                if document_ir_bytes > MAX_DOCUMENT_IR_BYTES {
+                    producer_error =
+                        Some(anyhow!("extracted document exceeds the IR output limit"));
+                    cancellation.cancel();
+                    break;
+                }
+                pages.push(page);
+            }
             Ok(Err(error)) => {
                 if producer_error.is_none() {
                     producer_error = Some(error);

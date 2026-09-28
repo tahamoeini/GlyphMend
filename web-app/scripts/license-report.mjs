@@ -39,7 +39,7 @@ const browserPolicy = Object.freeze({
   },
   mupdf: {
     expectedLicenses: ["AGPL-3.0-or-later"],
-    review: "BLOCKED_STRATEGY_REVIEW",
+    review: "AGPL_SOURCE_OFFER_REQUIRED",
     purpose: "Browser PDF/vector rendering and extraction via WASM",
   },
   "pdfjs-dist": {
@@ -147,5 +147,5 @@ if (failures.length) {
   if (checkMode) process.exitCode = 1;
 } else {
   console.log("\nLicense gate: PASS — every current direct production dependency has an explicit reviewed policy entry and browser lockfile licenses match the reviewed expressions.");
-  console.log("Known copyleft strategy blockers remain BLOCKED_STRATEGY_REVIEW; this command does not convert them into approvals.");
+  console.log("The web application is licensed under AGPL-3.0-or-later. Deployed network-interactive versions must provide corresponding source under the applicable license terms.");
 }

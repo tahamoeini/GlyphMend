@@ -161,31 +161,55 @@ jobs:
           chmod +x "$package/run-companion.sh"
           printf 'GlyphMend Companion %s (%s)\n\nRun run-companion.sh on macOS/Linux or run-companion.bat on Windows. Both English OCR model sets are bundled. The companion binds only to loopback and opens the matching GlyphMend browser page for user-initiated pairing.\n' "$VERSION" "$PLATFORM" > "$package/README.txt"
           printf '{"version":"%s","platform":"%s","target":"%s","pdfiumRelease":"chromium/8066","pdfiumArchive":"%s","pdfiumArchiveSha256":"%s","pdfiumSha256":"%s","ocrModels":{"fast":{"commit":"%s","sha256":"%s"},"best":{"commit":"%s","sha256":"%s"}}}\n' "$VERSION" "$PLATFORM" "$TARGET" "$PDFIUM_ASSET" "$pdfium_archive_hash" "$pdfium_hash" "$(cat "$package/tessdata/fast/UPSTREAM_COMMIT")" "$(file_hash "$package/tessdata/fast/eng.traineddata")" "$(cat "$package/tessdata/best/UPSTREAM_COMMIT")" "$(file_hash "$package/tessdata/best/eng.traineddata")" > "$package/runtime-manifest.json"
-          if [[ "$OS_NAME" == "Windows" ]]; then
-            powershell.exe -NoProfile -Command '$ErrorActionPreference="Stop"; $cert=$env:WINDOWS_SIGNING_PFX_BASE64; if(!$cert -or !$env:WINDOWS_SIGNING_PFX_PASSWORD){throw "Required Windows code-signing credentials are missing."}; [IO.File]::WriteAllBytes("signing.pfx",[Convert]::FromBase64String($cert)); $tool=(Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1).FullName; Get-ChildItem .\glyphmend-companion-windows-x64\*.exe, .\glyphmend-companion-windows-x64\*.dll -File | ForEach-Object { & $tool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f signing.pfx /p $env:WINDOWS_SIGNING_PFX_PASSWORD $_.FullName; if($LASTEXITCODE -ne 0){throw "Signing failed: $($_.Name)"}; & $tool verify /pa $_.FullName; if($LASTEXITCODE -ne 0){throw "Signature verification failed: $($_.Name)"} }; Remove-Item signing.pfx -Force'
-          elif [[ "$OS_NAME" == "macOS" ]]; then
-            if [[ -z "${APPLE_DEVELOPER_ID_P12_BASE64:-}" || -z "${APPLE_DEVELOPER_ID_P12_PASSWORD:-}" || -z "${APPLE_TEAM_ID:-}" || -z "${APPLE_ID:-}" || -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then echo 'Required Apple Developer ID or notarization credentials are missing.' >&2; exit 1; fi
-            echo "$APPLE_DEVELOPER_ID_P12_BASE64" | base64 -D > /tmp/developer-id.p12
-            security create-keychain -p "$APPLE_DEVELOPER_ID_P12_PASSWORD" build.keychain
-            security unlock-keychain -p "$APPLE_DEVELOPER_ID_P12_PASSWORD" build.keychain
-            security import /tmp/developer-id.p12 -k build.keychain -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
-            security set-key-partition-list -S apple-tool:,apple: -s -k "$APPLE_DEVELOPER_ID_P12_PASSWORD" build.keychain
-            identity=$(security find-identity -v -p codesigning build.keychain | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)
-            test -n "$identity"
-            find "$package/lib" -type f -name '*.dylib' -print0 | while IFS= read -r -d '' lib; do codesign --force --timestamp --options runtime --sign "$identity" "$lib"; done
-            find "$package" -maxdepth 1 -type f -name '*.dylib' -print0 | while IFS= read -r -d '' lib; do codesign --force --timestamp --options runtime --sign "$identity" "$lib"; done
-            codesign --force --timestamp --options runtime --entitlements resources/macos-entitlements.plist --sign "$identity" "$package/glyphmend-companion"
-            codesign --verify --deep --strict --verbose=2 "$package/glyphmend-companion"
-          fi
           echo "package=$package" >> "$GITHUB_OUTPUT"
+      - name: Sign Windows Companion binaries
+        if: runner.os == 'Windows'
+        shell: pwsh
         env:
+          PACKAGE: ${{ steps.bundle.outputs.package }}
           WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
           WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (!$env:WINDOWS_SIGNING_PFX_BASE64 -or !$env:WINDOWS_SIGNING_PFX_PASSWORD) { throw 'Required Windows code-signing credentials are missing.' }
+          $certificate = Join-Path $env:RUNNER_TEMP 'glyphmend-signing.pfx'
+          try {
+            [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64))
+            $tool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1).FullName
+            Get-ChildItem (Join-Path $env:PACKAGE '*.exe'), (Join-Path $env:PACKAGE '*.dll') -File | ForEach-Object {
+              & $tool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $certificate /p $env:WINDOWS_SIGNING_PFX_PASSWORD $_.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Signing failed: $($_.Name)" }
+              & $tool verify /pa $_.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $($_.Name)" }
+            }
+          } finally {
+            Remove-Item $certificate -Force -ErrorAction SilentlyContinue
+          }
+      - name: Sign macOS Companion binaries
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          PACKAGE: ${{ steps.bundle.outputs.package }}
           APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
           APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${APPLE_DEVELOPER_ID_P12_BASE64:?Required Apple Developer ID certificate is missing.}"
+          : "${APPLE_DEVELOPER_ID_P12_PASSWORD:?Required Apple Developer ID certificate password is missing.}"
+          certificate="$RUNNER_TEMP/developer-id.p12"
+          keychain="$RUNNER_TEMP/glyphmend-build.keychain"
+          trap 'security delete-keychain "$keychain" >/dev/null 2>&1 || true; rm -f "$certificate"' EXIT
+          echo "$APPLE_DEVELOPER_ID_P12_BASE64" | base64 -D > "$certificate"
+          security create-keychain -p "$APPLE_DEVELOPER_ID_P12_PASSWORD" "$keychain"
+          security unlock-keychain -p "$APPLE_DEVELOPER_ID_P12_PASSWORD" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$APPLE_DEVELOPER_ID_P12_PASSWORD" "$keychain"
+          identity=$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)
+          test -n "$identity"
+          find "$PACKAGE/lib" -type f -name '*.dylib' -print0 | while IFS= read -r -d '' lib; do codesign --force --timestamp --options runtime --sign "$identity" "$lib"; done
+          find "$PACKAGE" -maxdepth 1 -type f -name '*.dylib' -print0 | while IFS= read -r -d '' lib; do codesign --force --timestamp --options runtime --sign "$identity" "$lib"; done
+          codesign --force --timestamp --options runtime --entitlements resources/macos-entitlements.plist --sign "$identity" "$PACKAGE/glyphmend-companion"
+          codesign --verify --deep --strict --verbose=2 "$PACKAGE/glyphmend-companion"
       - name: Create SPDX SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
@@ -198,9 +222,6 @@ jobs:
         env:
           PACKAGE: ${{ steps.bundle.outputs.package }}
           PLATFORM: ${{ matrix.platform }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           set -euo pipefail
           if [[ "${{ runner.os }}" == "Windows" ]]; then
@@ -210,13 +231,27 @@ jobs:
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
             (cd "$PACKAGE" && find . -type f ! -name SHA256SUMS -print0 | xargs -0 shasum -a 256 > SHA256SUMS)
             ditto -c -k --keepParent "$PACKAGE" "release/$PACKAGE.zip"
-            xcrun notarytool submit "release/$PACKAGE.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
-            (cd release && shasum -a 256 "$PACKAGE.zip" | sed "s#  #  #" > "SHA256SUMS-$PLATFORM")
+            (cd release && shasum -a 256 "$PACKAGE.zip" > "SHA256SUMS-$PLATFORM")
           else
             (cd "$PACKAGE" && find . -type f ! -name SHA256SUMS -print0 | xargs -0 sha256sum > SHA256SUMS)
             tar -czf "release/$PACKAGE.tar.gz" "$PACKAGE"
             (cd release && sha256sum "$PACKAGE.tar.gz" > "SHA256SUMS-$PLATFORM")
           fi
+      - name: Notarize macOS Companion package
+        if: runner.os == 'macOS'
+        env:
+          PACKAGE: ${{ steps.bundle.outputs.package }}
+          PLATFORM: ${{ matrix.platform }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${APPLE_TEAM_ID:?Required Apple Developer team ID is missing.}"
+          : "${APPLE_ID:?Required Apple ID is missing.}"
+          : "${APPLE_APP_SPECIFIC_PASSWORD:?Required Apple notarization password is missing.}"
+          xcrun notarytool submit "release/$PACKAGE.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          (cd release && shasum -a 256 "$PACKAGE.zip" > "SHA256SUMS-$PLATFORM")
       - name: Attest release assets
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

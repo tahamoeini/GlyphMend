@@ -40,7 +40,9 @@ The Companion is selected only for a job after a user connects it. It returns Se
 
 ## Licensing
 
-MuPDF.js is AGPL-3.0-or-later or commercially licensed by Artifex. Confirm that your deployment satisfies the applicable terms or obtain a commercial MuPDF license. Tesseract.js is Apache-2.0 and the bundled English data package is MIT licensed. Companion package notices and dependencies are tracked separately in its release archive.
+The browser platform, including the MuPDF.js integration, is licensed under AGPL-3.0-or-later. The complete license is in [LICENSE](./LICENSE). The app footer links to the corresponding source tree and license for the deployed build; deployments outside the GitHub workflow must set the matching VITE_SOURCE_URL and VITE_LICENSE_URL build variables. Network-interactive deployments must make the corresponding source for the running version available under the AGPL terms.
+
+This is an engineering implementation of the project’s chosen license route, not legal advice. MuPDF.js is also available under a commercial license from Artifex. Tesseract.js is Apache-2.0 and the bundled English data package is MIT licensed. The Rust Companion remains separately licensed as Apache-2.0 OR MIT; its package notices and dependencies are tracked in release archives.
 
 ## Interface materials
 

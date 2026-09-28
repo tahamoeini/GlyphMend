@@ -19,6 +19,8 @@ jobs:
         working-directory: web-app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
@@ -38,7 +40,11 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build
+      - name: Build with source links for this exact revision
+        run: npm run build
+        env:
+          VITE_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}/web-app
+          VITE_LICENSE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/web-app/LICENSE
       - name: Ensure generated branding is committed
         run: git diff --exit-code -- branding.json brand web-app/src/shared/brand.js web-app/src/styles/style.css
       - if: github.event_name == 'workflow_dispatch'

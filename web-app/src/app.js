@@ -42,6 +42,8 @@ import {
 import { visualIRToAccessibleDescription } from "./shared/visual-accessibility.js";
 import { buildReconstructableBundle } from "./shared/reconstructable-bundle.js";
 import {
+  ACTIVE_FORMAT_LIMITS,
+  assertImportFileSize,
   validateExtractionRequest,
   validateExtractionWorkerMessage,
 } from "./shared/security-boundaries.js";
@@ -2012,14 +2014,26 @@ function bind() {
   $("exportWorkspaceButton").onclick = () => save("workspace");
   $("workspaceInput").onchange = async (e) => {
     try {
-      await restore(deserializeWorkspace(await e.target.files[0].text()));
+      const file = e.target.files[0];
+      if (!file) return;
+      assertImportFileSize(file, ACTIVE_FORMAT_LIMITS.maxWorkspaceImportBytes, "Workspace file");
+      await restore(deserializeWorkspace(await file.text()));
     } catch (error) {
       toast(error.message, true);
+    } finally {
+      e.target.value = "";
     }
   };
   $("markdownInput").onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    try {
+      assertImportFileSize(file, ACTIVE_FORMAT_LIMITS.maxMarkdownImportBytes, "Markdown file");
+    } catch (error) {
+      toast(error.message, true);
+      e.target.value = "";
+      return;
+    }
     Object.assign(state, {
       fileName: file.name.replace(/\.md$/i, ".pdf"),
       fileSize: 0,
