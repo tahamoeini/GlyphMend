@@ -234,6 +234,9 @@ export class LoopbackCompanionBridge {
     let subscription;
     try {
       subscription = this.subscribe(job.jobId, onProgress, { signal });
+      // The progress poll can fail while input is still uploading. Attach a
+      // handler immediately so its rejection is observed before the later await.
+      subscription.done.catch(() => undefined);
       for (let offset = 0, sequence = 0; offset < input.byteLength; offset += COMPANION_LIMITS.chunkBytes, sequence += 1) {
         if (signal?.aborted) throw abortError();
         const end = Math.min(offset + COMPANION_LIMITS.chunkBytes, input.byteLength);
@@ -255,6 +258,7 @@ export class LoopbackCompanionBridge {
         await this.cancel(job.jobId).catch(() => undefined);
         throw abortError();
       }
+      await this.cancel(job.jobId).catch(() => undefined);
       throw error;
     } finally {
       subscription?.stop();
@@ -391,6 +395,9 @@ export function createCompanionProvider({ bridge, capabilityId = "glyphmend.visu
         if (signal?.aborted) {
           if (job) await bridge.cancel(job.jobId).catch(() => undefined);
           throw abortError();
+        }
+        if (job && typeof bridge.cancel === "function") {
+          await bridge.cancel(job.jobId).catch(() => undefined);
         }
         throw error;
       } finally {

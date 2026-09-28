@@ -149,6 +149,26 @@ it("cancels an uploaded document job when its extraction signal is aborted", asy
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/cancel"))).toBe(true);
 });
 
+it("cancels a partial document job after a transfer failure", async () => {
+  const fetch = vi.fn(async (url) => {
+    if (url.endsWith("/v1/jobs")) return response({ jobId: "failed-transfer-job" });
+    if (url.includes("/events?")) throw new TypeError("Companion connection was lost.");
+    if (url.includes("/chunks/0")) throw new TypeError("Companion connection was lost.");
+    if (url.endsWith("/cancel")) return response({}, true, 204);
+    throw new Error(`Unexpected Companion request: ${url}`);
+  });
+  const bridge = new LoopbackCompanionBridge(fetch);
+  bridge.endpoint = "http://127.0.0.1:49183";
+  bridge.session = { token: "token" };
+
+  await expect(bridge.extractDocument({
+    bytes: new Uint8Array([37, 80, 68, 70]),
+    pageCount: 1,
+    selectedPages: [1],
+  })).rejects.toThrow("Companion connection was lost.");
+  expect(fetch.mock.calls.some(([url]) => url.endsWith("/cancel"))).toBe(true);
+});
+
 it("keeps a denied or offline companion connection optional", async () => {
   const bridge = new LoopbackCompanionBridge(vi.fn().mockRejectedValue(new TypeError("local network permission denied")));
   expect(await bridge.connect("http://127.0.0.1:49183", "code")).toEqual({ status: "failed" });
