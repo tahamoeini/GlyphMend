@@ -14,8 +14,10 @@ const manifestPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'co
 const manifestBytes = fs.readFileSync(manifestPath);
 const manifestHash = createHash('sha256').update(manifestBytes).digest('hex');
 const manifest = JSON.parse(manifestBytes);
+const browserOnly = raw.kind === 'browser-smoke';
 const errors = [];
 if (raw.schemaVersion !== 1) errors.push('raw run schemaVersion must be 1');
+if (raw.kind && !['paired-benchmark', 'browser-smoke'].includes(raw.kind)) errors.push('raw run kind is not supported');
 if (raw.corpusManifestSha256 !== manifestHash) errors.push('raw run corpus hash does not match the checked-in manifest');
 const seenRunKeys = new Set();
 for (const run of raw.runs ?? []) {
@@ -30,6 +32,7 @@ for (const run of raw.runs ?? []) {
   if (run.documentId !== gold.id) errors.push(key + ': documentId does not match the labeled fixture');
   if (!Number.isInteger(run.repeat) || run.repeat < 1) errors.push(key + ': repeat must be a positive integer');
   if (!['browser', 'companion'].includes(run.mode)) errors.push(key + ': mode must be browser or companion');
+  if (browserOnly && run.mode !== 'browser') errors.push(key + ': browser-smoke data must contain browser runs only');
   if (!run.engineVersion || typeof run.engineVersion !== 'string') errors.push(key + ': engineVersion is required');
   if (!run.startedAt || typeof run.startedAt !== 'string') errors.push(key + ': startedAt is required');
   if (run.mode === 'browser' && run.ocrAccuracy !== raw.environment?.browserOcrModel) errors.push(key + ': browser OCR model does not match the run environment');
@@ -41,11 +44,29 @@ if (!Array.isArray(raw.browserRegression?.checkedClasses)
   || classNames.some((name) => !raw.browserRegression.checkedClasses.includes(name))) {
   errors.push('browser-regression evidence must cover all six labeled classes');
 }
-if (!raw.environment?.platform || !raw.environment?.browserVersion || !raw.environment?.companionVersion) errors.push('platform, browser version, and Companion version are required');
+if (!raw.environment?.platform || !raw.environment?.browserVersion || (!browserOnly && !raw.environment?.companionVersion)) {
+  errors.push(browserOnly
+    ? 'platform and browser version are required'
+    : 'platform, browser version, and Companion version are required');
+}
 if (raw.browserRegression?.passed !== true || !raw.browserRegression?.evidence) errors.push('passing browser-regression evidence is required');
 
 function normalize(value) {
-  return value.normalize('NFKC').toLocaleLowerCase('en').replace(/\s+/g, ' ').trim();
+  return String(value)
+    .replace(/\[SOURCE_VISUAL\b[^\]\r\n]*(?:\]|$)/gi, ' ')
+    .replace(/^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/gm, ' ')
+    .replace(/^\s*\$\$\s*$/gm, ' ')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/_(.*?)_/g, '$1')
+    .replace(/`{1,3}/g, '')
+    .replace(/\|/g, ' ')
+    .normalize('NFKC')
+    .toLocaleLowerCase('en')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function editDistance(left, right) {
@@ -81,7 +102,7 @@ function wordErrorRate(expectedText, actualText) {
 
 function readingOrderError(expectedLines, actualLines) {
   const expected = expectedLines.map(normalize);
-  const actual = actualLines.map((line) => normalize(line));
+  const actual = actualLines.map((line) => normalize(line)).filter(Boolean);
   const indexes = actual.map((line, actualIndex) => {
     let bestIndex = -1;
     let bestDistance = Infinity;
@@ -129,6 +150,66 @@ function measureRun(gold, run) {
     latencyMs: run.elapsedMs,
     peakMemoryMb: run.peakMemoryMb,
   };
+}
+
+if (browserOnly) {
+  const browserResults = {};
+  const metricNames = [
+    'characterErrorRate', 'wordErrorRate', 'readingOrderError',
+    'structureF1', 'latencyMs', 'peakMemoryMb',
+  ];
+  const median = (values) => {
+    const sorted = [...values].sort((left, right) => left - right);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  };
+  for (const name of classNames) {
+    const gold = manifest.documents.find((document) => document.documentClass === name);
+    const rows = raw.runs?.filter((run) => run.documentClass === name) ?? [];
+    if (!rows.length) {
+      errors.push(`${name}: browser-only evidence is missing this labeled class`);
+      continue;
+    }
+    const runs = [];
+    for (const run of rows) {
+      try {
+        runs.push({
+          repeat: run.repeat,
+          ...measureRun(gold, run),
+          engineVersion: run.engineVersion,
+          ocrAccuracy: run.ocrAccuracy,
+          fallbackDetails: run.fallbackDetails,
+        });
+      } catch (error) {
+        errors.push(`${name}: repeat ${run.repeat}: ${error.message}`);
+      }
+    }
+    browserResults[name] = {
+      browserRuns: runs,
+      median: Object.fromEntries(metricNames.map((metric) => [
+        metric,
+        runs.length ? median(runs.map((run) => run[metric])) : null,
+      ])),
+      browserRegressionPassed: raw.browserRegression?.passed === true,
+      browserRegressionEvidence: raw.browserRegression?.evidence ?? '',
+    };
+  }
+  if (errors.length) {
+    console.error(errors.map((error) => `- ${error}`).join('\n'));
+    process.exit(1);
+  }
+  const report = {
+    schemaVersion: 1,
+    kind: 'browser-only',
+    corpusManifestSha256: manifestHash,
+    environment: raw.environment,
+    browserRegressionEvidence: raw.browserRegression.evidence,
+    classes: browserResults,
+  };
+  fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  console.log(`Wrote browser-only measurements for ${classNames.length} document classes; this report is not paired release evidence.`);
+  process.exit(0);
 }
 
 const results = {};

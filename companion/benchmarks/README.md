@@ -19,6 +19,15 @@ Repeat with --ocr-accuracy high-accuracy to produce a separate Best-model datase
 
 The manual-only .github/workflows/companion-benchmarks.yml workflow installs the pinned Linux runtimes and uploads raw and evaluated results as a workflow artifact. It does not run on pushes or pull requests.
 
+## Browser-only baseline
+
+If Companion native libraries or OCR models are unavailable locally, run browser-only regression and quality evidence across the same corpus:
+
+    node companion/benchmarks/run-benchmarks.mjs --browser-only --repeats 3 --output /tmp/glyphmend-browser-smoke.json
+    node companion/benchmarks/evaluate-results.mjs /tmp/glyphmend-browser-smoke.json /tmp/glyphmend-browser-smoke-report.json
+
+This report includes OCR character/word error, reading-order error, structure F1, latency, and peak Chromium process-tree memory by class. It is not paired Companion evidence and cannot pass the stable-promotion gate. Peak memory includes Chromium's baseline process tree, so compare it only against a paired run using the same browser and measurement setup.
+
 Evaluate raw runs with:
 
     node companion/benchmarks/evaluate-results.mjs /tmp/glyphmend-fast-raw.json /tmp/glyphmend-fast-report.json

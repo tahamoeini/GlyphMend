@@ -252,6 +252,10 @@ jobs:
           : "${APPLE_APP_SPECIFIC_PASSWORD:?Required Apple notarization password is missing.}"
           xcrun notarytool submit "release/$PACKAGE.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           (cd release && shasum -a 256 "$PACKAGE.zip" > "SHA256SUMS-$PLATFORM")
+      - name: Smoke test the signed runtime and both OCR models
+        env:
+          GLYPHMEND_COMPANION: ${{ steps.bundle.outputs.package }}/${{ runner.os == 'Windows' && 'run-companion.bat' || 'run-companion.sh' }}
+        run: node tests/document-extraction-e2e.mjs
       - name: Attest release assets
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

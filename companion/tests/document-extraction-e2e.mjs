@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { LoopbackCompanionBridge } from '../../web-app/src/features/companion/bridge.js';
 
-const executable = process.platform === 'win32' ? 'target/debug/companion-cli.exe' : 'target/debug/companion-cli';
+const executable = process.env.GLYPHMEND_COMPANION
+  ? path.resolve(process.env.GLYPHMEND_COMPANION)
+  : process.platform === 'win32' ? 'target/debug/companion-cli.exe' : 'target/debug/companion-cli';
 const webOrigin = 'http://127.0.0.1:5173';
-const child = spawn(executable, ['--no-open', '--web-origin', webOrigin], { stdio: ['ignore', 'pipe', 'inherit'] });
+const child = spawn(executable, ['--no-open', '--web-origin', webOrigin], {
+  stdio: ['ignore', 'pipe', 'inherit'],
+  shell: process.platform === 'win32',
+});
 let output = '';
 child.stdout.setEncoding('utf8');
 child.stdout.on('data', (chunk) => { output += chunk; });

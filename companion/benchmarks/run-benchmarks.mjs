@@ -392,12 +392,21 @@ async function withPeakMemory(rootPid, operation) {
 
 function extractTexts(document) {
   const lines = [];
+  const appendLine = (value) => {
+    const line = String(value).replace(/\[SOURCE_VISUAL\b[^\]\r\n]*(?:\]|$)/gi, " ").trim();
+    if (!line || /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) return;
+    if (line.startsWith("|")) {
+      for (const cell of line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|")) {
+        if (cell.trim()) lines.push(cell.trim());
+      }
+      return;
+    }
+    lines.push(line);
+  };
   for (const page of document.pages || []) {
     for (const node of page.nodes || []) {
       const value = node.content?.text ?? node.content?.markdown ?? "";
-      for (const line of String(value).split(/\r?\n/)) {
-        if (line.trim()) lines.push(line.trim());
-      }
+      for (const line of String(value).split(/\r?\n/)) appendLine(line);
     }
   }
   return lines;
@@ -540,6 +549,25 @@ function commitHash() {
   return result.status === 0 ? result.stdout.trim() : "unknown";
 }
 
+function workingTreeEvidence() {
+  const status = spawnSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
+    cwd: repoRoot,
+    encoding: "buffer",
+    maxBuffer: 1024 * 1024,
+  });
+  const diff = spawnSync("git", ["diff", "--binary", "HEAD"], {
+    cwd: repoRoot,
+    encoding: "buffer",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (status.status !== 0 || diff.status !== 0) throw new Error("Could not record the benchmark worktree state.");
+  return {
+    workingTreeDirty: status.stdout.length > 0,
+    workingTreeStatusSha256: createHash("sha256").update(status.stdout).digest("hex"),
+    trackedDiffSha256: createHash("sha256").update(diff.stdout).digest("hex"),
+  };
+}
+
 function companionVersion(executablePath) {
   const result = spawnSync(executablePath, ["--version"], { encoding: "utf8" });
   if (result.status === 0) return result.stdout.trim().split(/\r?\n/)[0];
@@ -547,6 +575,7 @@ function companionVersion(executablePath) {
 }
 
 async function main() {
+  const browserOnly = process.argv.includes("--browser-only");
   const repeats = Number(requiredOption("--repeats", "3"));
   const accuracy = requiredOption("--ocr-accuracy", "fast");
   const outputPath = path.resolve(requiredOption("--output", path.join(os.tmpdir(), "glyphmend-benchmark-raw.json")));
@@ -554,23 +583,32 @@ async function main() {
   if (!["fast", "high-accuracy"].includes(accuracy)) throw new Error("--ocr-accuracy must be fast or high-accuracy.");
   if (process.platform === "win32" && !executable("powershell.exe")) throw new Error("PowerShell is required for Windows memory sampling.");
   const browserExecutable = resolveBrowser();
-  const companionExecutable = resolveCompanion();
-  if (!fs.existsSync(companionExecutable)) throw new Error("Companion executable is missing: " + companionExecutable);
-  const companionDirectory = path.dirname(companionExecutable);
-  const modelRoot = path.resolve(process.env.GLYPHMEND_TESSDATA_DIR || path.join(companionDirectory, "tessdata"));
-  const selectedModel = accuracy === "fast" ? "fast" : "best";
-  const modelPath = path.join(modelRoot, selectedModel, "eng.traineddata");
-  if (!fs.existsSync(modelPath)) throw new Error("Companion OCR model is missing: " + modelPath);
-  const pdfiumName = process.platform === "win32" ? "pdfium.dll" : process.platform === "darwin" ? "libpdfium.dylib" : "libpdfium.so";
-  const pdfiumPath = path.join(companionDirectory, pdfiumName);
-  if (!fs.existsSync(pdfiumPath)) throw new Error("PDFium runtime is missing beside the Companion executable: " + pdfiumPath);
+  let companionExecutable;
+  let companionDirectory;
+  let modelRoot;
+  let modelPath;
+  let pdfiumPath;
+  let selectedModel;
+  if (!browserOnly) {
+    companionExecutable = resolveCompanion();
+    if (!fs.existsSync(companionExecutable)) throw new Error("Companion executable is missing: " + companionExecutable);
+    companionDirectory = path.dirname(companionExecutable);
+    modelRoot = path.resolve(process.env.GLYPHMEND_TESSDATA_DIR || path.join(companionDirectory, "tessdata"));
+    selectedModel = accuracy === "fast" ? "fast" : "best";
+    modelPath = path.join(modelRoot, selectedModel, "eng.traineddata");
+    if (!fs.existsSync(modelPath)) throw new Error("Companion OCR model is missing: " + modelPath);
+    const pdfiumName = process.platform === "win32" ? "pdfium.dll" : process.platform === "darwin" ? "libpdfium.dylib" : "libpdfium.so";
+    pdfiumPath = path.join(companionDirectory, pdfiumName);
+    if (!fs.existsSync(pdfiumPath)) throw new Error("PDFium runtime is missing beside the Companion executable: " + pdfiumPath);
+  }
   const readHash = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
   const browserVersion = await startVersionProbe(browserExecutable);
-  const appVersion = companionVersion(companionExecutable);
+  const appVersion = browserOnly ? null : companionVersion(companionExecutable);
   const revision = commitHash();
 
   console.log("Running browser license, quality, test, and production-build checks.");
   runBrowserChecks();
+  const worktreeEvidence = workingTreeEvidence();
 
   let server;
   let browser;
@@ -578,12 +616,14 @@ async function main() {
   let bridge;
   const raw = {
     schemaVersion: 1,
+    kind: browserOnly ? "browser-smoke" : "paired-benchmark",
     corpusManifestSha256: manifestSha256,
     environment: {
       platform: process.platform + "-" + process.arch,
       browserVersion,
       companionVersion: appVersion,
       gitCommit: revision,
+      ...worktreeEvidence,
       browserOcrModel: "bundled eng best_int",
       companionOcrAccuracy: accuracy,
       repetitions: repeats,
@@ -598,24 +638,28 @@ async function main() {
   };
   try {
     raw.environment.browserOcrModelSha256 = readHash(path.join(webRoot, "dist/tessdata/eng.traineddata"));
-    raw.environment.companionOcrModelSha256 = readHash(modelPath);
-    raw.environment.companionOcrModelCommit = fs.existsSync(path.join(modelRoot, selectedModel, "UPSTREAM_COMMIT"))
-      ? fs.readFileSync(path.join(modelRoot, selectedModel, "UPSTREAM_COMMIT"), "utf8").trim()
-      : "unknown";
-    raw.environment.pdfiumSha256 = readHash(pdfiumPath);
+    if (!browserOnly) {
+      raw.environment.companionOcrModelSha256 = readHash(modelPath);
+      raw.environment.companionOcrModelCommit = fs.existsSync(path.join(modelRoot, selectedModel, "UPSTREAM_COMMIT"))
+        ? fs.readFileSync(path.join(modelRoot, selectedModel, "UPSTREAM_COMMIT"), "utf8").trim()
+        : "unknown";
+      raw.environment.pdfiumSha256 = readHash(pdfiumPath);
+    }
     server = await startWebServer();
     browser = await startBrowser(browserExecutable);
     await navigateToApp(browser.page, server.origin);
-    companion = startCompanion(companionExecutable, server.origin, modelRoot);
-    const connected = await companionConnection(companion);
-    bridge = connected.bridge;
+    if (!browserOnly) {
+      companion = startCompanion(companionExecutable, server.origin, modelRoot);
+      const connected = await companionConnection(companion);
+      bridge = connected.bridge;
+    }
     const regressionClasses = [];
     for (const fixture of manifest.documents) {
       const pdfBytes = fs.readFileSync(path.join(corpusDir, fixture.file));
       const hash = createHash("sha256").update(pdfBytes).digest("hex");
       if (hash !== fixture.sha256) throw new Error(fixture.id + ": PDF hash changed after corpus validation.");
       for (let repeat = 1; repeat <= repeats; repeat += 1) {
-        const modes = repeat % 2 ? ["browser", "companion"] : ["companion", "browser"];
+        const modes = browserOnly ? ["browser"] : repeat % 2 ? ["browser", "companion"] : ["companion", "browser"];
         for (const mode of modes) {
           const startedAt = new Date().toISOString();
           const measured = await withPeakMemory(
@@ -655,13 +699,15 @@ async function main() {
     }
     raw.browserRegression = {
       passed: true,
-      evidence: "The six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed in this run.",
+      evidence: browserOnly
+        ? "Browser-only smoke run: the six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed. This is not a paired Companion benchmark."
+        : "The six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed in this run.",
       checkedClasses: regressionClasses,
       checkedAt: new Date().toISOString(),
     };
     raw.environment.finishedAt = new Date().toISOString();
     persist();
-    console.log("Raw paired runs written to " + outputPath);
+    console.log((browserOnly ? "Browser-only smoke evidence" : "Raw paired runs") + " written to " + outputPath);
   } finally {
     await bridge?.disconnect().catch(() => {});
     terminate(companion?.child);
