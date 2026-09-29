@@ -1,0 +1,5 @@
+{
+  "name": "glyphmend-companion-tauri-web-adapter",
+  "private": true,
+  "type": "module"
+}

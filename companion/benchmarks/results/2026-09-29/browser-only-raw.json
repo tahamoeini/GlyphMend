@@ -1,0 +1,641 @@
+{
+  "schemaVersion": 1,
+  "kind": "browser-smoke",
+  "corpusManifestSha256": "fe7e67fb46e555a2e9c9374728dd91dad95ee909887225243812e1846cdbd59e",
+  "environment": {
+    "platform": "linux-x64",
+    "browserVersion": "Google Chrome for Testing 154.0.8037.0",
+    "companionVersion": null,
+    "gitCommit": "c7b803484ff6376c16bf1e01fbb9b2587d40f091",
+    "workingTreeDirty": true,
+    "workingTreeStatusSha256": "b2ea3a1c96aee31477a180dd320f3727ed68b5586abcecbf128094adeb727527",
+    "trackedDiffSha256": "441b3047f3e245c98deed309764a39f4c6fcc1c2fab10e1161bde13f6f0b7d2b",
+    "browserOcrModel": "bundled eng best_int",
+    "companionOcrAccuracy": "fast",
+    "repetitions": 3,
+    "startedAt": "2026-09-29T17:22:03.682Z",
+    "browserOcrModelSha256": "5dc5d8d640a212c9d6184921ba103b186f50e0fed9ee716c53e6b312b400d747",
+    "finishedAt": "2026-09-29T17:22:17.275Z"
+  },
+  "browserRegression": {
+    "passed": true,
+    "evidence": "Browser-only smoke run: the six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed. This is not a paired Companion benchmark.",
+    "checkedClasses": [
+      "text-heavy",
+      "scanned-english",
+      "multi-column",
+      "table",
+      "equation",
+      "image-heavy"
+    ],
+    "checkedAt": "2026-09-29T17:22:17.275Z"
+  },
+  "runs": [
+    {
+      "documentId": "text-heavy",
+      "documentClass": "text-heavy",
+      "documentSha256": "9c133035506edf3150890db001047c3c50f55df24be941f47cd3c3c86bcbd02c",
+      "repeat": 1,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:06.988Z",
+      "pageCount": 1,
+      "recognizedText": "GLYPHMEND TEXT HEAVY BENCHMARK\nA measured extraction begins with stable source text.\nEach sentence has a clear baseline and reading order.\nPage geometry places every line inside the margin.\nRepeated terms let reviewers compare character error.\nA second paragraph tests extraction across line breaks.\nReliable output preserves headings, words, and order.\nThe browser and companion receive the same PDF bytes.\nNo remote assets or private source documents are used.\nThis final line closes the synthetic text sample.",
+      "readingOrder": [
+        "GLYPHMEND TEXT HEAVY BENCHMARK",
+        "A measured extraction begins with stable source text.",
+        "Each sentence has a clear baseline and reading order.",
+        "Page geometry places every line inside the margin.",
+        "Repeated terms let reviewers compare character error.",
+        "A second paragraph tests extraction across line breaks.",
+        "Reliable output preserves headings, words, and order.",
+        "The browser and companion receive the same PDF bytes.",
+        "No remote assets or private source documents are used.",
+        "This final line closes the synthetic text sample."
+      ],
+      "structureLabels": [
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph"
+      ],
+      "elapsedMs": 435,
+      "peakMemoryMb": 1385.96,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "text-heavy",
+      "documentClass": "text-heavy",
+      "documentSha256": "9c133035506edf3150890db001047c3c50f55df24be941f47cd3c3c86bcbd02c",
+      "repeat": 2,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:07.547Z",
+      "pageCount": 1,
+      "recognizedText": "GLYPHMEND TEXT HEAVY BENCHMARK\nA measured extraction begins with stable source text.\nEach sentence has a clear baseline and reading order.\nPage geometry places every line inside the margin.\nRepeated terms let reviewers compare character error.\nA second paragraph tests extraction across line breaks.\nReliable output preserves headings, words, and order.\nThe browser and companion receive the same PDF bytes.\nNo remote assets or private source documents are used.\nThis final line closes the synthetic text sample.",
+      "readingOrder": [
+        "GLYPHMEND TEXT HEAVY BENCHMARK",
+        "A measured extraction begins with stable source text.",
+        "Each sentence has a clear baseline and reading order.",
+        "Page geometry places every line inside the margin.",
+        "Repeated terms let reviewers compare character error.",
+        "A second paragraph tests extraction across line breaks.",
+        "Reliable output preserves headings, words, and order.",
+        "The browser and companion receive the same PDF bytes.",
+        "No remote assets or private source documents are used.",
+        "This final line closes the synthetic text sample."
+      ],
+      "structureLabels": [
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph"
+      ],
+      "elapsedMs": 148,
+      "peakMemoryMb": 1410.49,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "text-heavy",
+      "documentClass": "text-heavy",
+      "documentSha256": "9c133035506edf3150890db001047c3c50f55df24be941f47cd3c3c86bcbd02c",
+      "repeat": 3,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:07.838Z",
+      "pageCount": 1,
+      "recognizedText": "GLYPHMEND TEXT HEAVY BENCHMARK\nA measured extraction begins with stable source text.\nEach sentence has a clear baseline and reading order.\nPage geometry places every line inside the margin.\nRepeated terms let reviewers compare character error.\nA second paragraph tests extraction across line breaks.\nReliable output preserves headings, words, and order.\nThe browser and companion receive the same PDF bytes.\nNo remote assets or private source documents are used.\nThis final line closes the synthetic text sample.",
+      "readingOrder": [
+        "GLYPHMEND TEXT HEAVY BENCHMARK",
+        "A measured extraction begins with stable source text.",
+        "Each sentence has a clear baseline and reading order.",
+        "Page geometry places every line inside the margin.",
+        "Repeated terms let reviewers compare character error.",
+        "A second paragraph tests extraction across line breaks.",
+        "Reliable output preserves headings, words, and order.",
+        "The browser and companion receive the same PDF bytes.",
+        "No remote assets or private source documents are used.",
+        "This final line closes the synthetic text sample."
+      ],
+      "structureLabels": [
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph",
+        "paragraph"
+      ],
+      "elapsedMs": 135,
+      "peakMemoryMb": 1412.64,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "scanned-english",
+      "documentClass": "scanned-english",
+      "documentSha256": "2392caf2af64f0533803ebc99b5b22ac38c7b8a83db16f6078c851cd741f9721",
+      "repeat": 1,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:08.135Z",
+      "pageCount": 1,
+      "recognizedText": "GLYFHMERMD OCF BEMCHMAEE\nSCHMMED EMGLISH SHMFLE\nGEOUMDO TEUTH LIME THEEE\nOFDERE MUST STRY TOF TO BOTTOM",
+      "readingOrder": [
+        "GLYFHMERMD OCF BEMCHMAEE",
+        "SCHMMED EMGLISH SHMFLE",
+        "GEOUMDO TEUTH LIME THEEE",
+        "OFDERE MUST STRY TOF TO BOTTOM"
+      ],
+      "structureLabels": [
+        "image-page",
+        "four-lines"
+      ],
+      "elapsedMs": 1173,
+      "peakMemoryMb": 1654.48,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "scanned-english",
+      "documentClass": "scanned-english",
+      "documentSha256": "2392caf2af64f0533803ebc99b5b22ac38c7b8a83db16f6078c851cd741f9721",
+      "repeat": 2,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:09.346Z",
+      "pageCount": 1,
+      "recognizedText": "GLYFHMERMD OCF BEMCHMAEE\nSCHMMED EMGLISH SHMFLE\nGEOUMDO TEUTH LIME THEEE\nOFDERE MUST STRY TOF TO BOTTOM",
+      "readingOrder": [
+        "GLYFHMERMD OCF BEMCHMAEE",
+        "SCHMMED EMGLISH SHMFLE",
+        "GEOUMDO TEUTH LIME THEEE",
+        "OFDERE MUST STRY TOF TO BOTTOM"
+      ],
+      "structureLabels": [
+        "image-page",
+        "four-lines"
+      ],
+      "elapsedMs": 1108,
+      "peakMemoryMb": 1665.32,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "scanned-english",
+      "documentClass": "scanned-english",
+      "documentSha256": "2392caf2af64f0533803ebc99b5b22ac38c7b8a83db16f6078c851cd741f9721",
+      "repeat": 3,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:10.568Z",
+      "pageCount": 1,
+      "recognizedText": "GLYFHMERMD OCF BEMCHMAEE\nSCHMMED EMGLISH SHMFLE\nGEOUMDO TEUTH LIME THEEE\nOFDERE MUST STRY TOF TO BOTTOM",
+      "readingOrder": [
+        "GLYFHMERMD OCF BEMCHMAEE",
+        "SCHMMED EMGLISH SHMFLE",
+        "GEOUMDO TEUTH LIME THEEE",
+        "OFDERE MUST STRY TOF TO BOTTOM"
+      ],
+      "structureLabels": [
+        "image-page",
+        "four-lines"
+      ],
+      "elapsedMs": 1093,
+      "peakMemoryMb": 1667.04,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "multi-column",
+      "documentClass": "multi-column",
+      "documentSha256": "366210902118445be7d61a2b9bb7ff420f952df80b10b89b6954923dc7cf518b",
+      "repeat": 1,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:11.796Z",
+      "pageCount": 1,
+      "recognizedText": "LEFT COLUMN FIRST\nRIGHT COLUMN SECOND\nLeft column line two\nRight column line two\nLeft column line three\nRight column line three\nLeft column line four\nRight column line four",
+      "readingOrder": [
+        "LEFT COLUMN FIRST",
+        "RIGHT COLUMN SECOND",
+        "Left column line two",
+        "Right column line two",
+        "Left column line three",
+        "Right column line three",
+        "Left column line four",
+        "Right column line four"
+      ],
+      "structureLabels": [],
+      "elapsedMs": 137,
+      "peakMemoryMb": 1488.33,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "multi-column",
+      "documentClass": "multi-column",
+      "documentSha256": "366210902118445be7d61a2b9bb7ff420f952df80b10b89b6954923dc7cf518b",
+      "repeat": 2,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:12.088Z",
+      "pageCount": 1,
+      "recognizedText": "LEFT COLUMN FIRST\nRIGHT COLUMN SECOND\nLeft column line two\nRight column line two\nLeft column line three\nRight column line three\nLeft column line four\nRight column line four",
+      "readingOrder": [
+        "LEFT COLUMN FIRST",
+        "RIGHT COLUMN SECOND",
+        "Left column line two",
+        "Right column line two",
+        "Left column line three",
+        "Right column line three",
+        "Left column line four",
+        "Right column line four"
+      ],
+      "structureLabels": [],
+      "elapsedMs": 116,
+      "peakMemoryMb": 1451.3,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "multi-column",
+      "documentClass": "multi-column",
+      "documentSha256": "366210902118445be7d61a2b9bb7ff420f952df80b10b89b6954923dc7cf518b",
+      "repeat": 3,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:12.244Z",
+      "pageCount": 1,
+      "recognizedText": "LEFT COLUMN FIRST\nRIGHT COLUMN SECOND\nLeft column line two\nRight column line two\nLeft column line three\nRight column line three\nLeft column line four\nRight column line four",
+      "readingOrder": [
+        "LEFT COLUMN FIRST",
+        "RIGHT COLUMN SECOND",
+        "Left column line two",
+        "Right column line two",
+        "Left column line three",
+        "Right column line three",
+        "Left column line four",
+        "Right column line four"
+      ],
+      "structureLabels": [],
+      "elapsedMs": 119,
+      "peakMemoryMb": 1451.3,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "table",
+      "documentClass": "table",
+      "documentSha256": "56894bebab2e13637dadaf18ccb62c6a8b0598c1124996c7192ef566cac519b1",
+      "repeat": 1,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:12.405Z",
+      "pageCount": 1,
+      "recognizedText": "ITEM\nCOUNT\nTOTAL\nPAGES\n3\n12\nMODEL\n2\n8\nSUM\n5\n20\nEr FR",
+      "readingOrder": [
+        "ITEM",
+        "COUNT",
+        "TOTAL",
+        "PAGES",
+        "3",
+        "12",
+        "MODEL",
+        "2",
+        "8",
+        "SUM",
+        "5",
+        "20",
+        "Er FR"
+      ],
+      "structureLabels": [
+        "table",
+        "three-rows",
+        "three-columns"
+      ],
+      "elapsedMs": 937,
+      "peakMemoryMb": 1657.74,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "table",
+      "documentClass": "table",
+      "documentSha256": "56894bebab2e13637dadaf18ccb62c6a8b0598c1124996c7192ef566cac519b1",
+      "repeat": 2,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:13.487Z",
+      "pageCount": 1,
+      "recognizedText": "ITEM\nCOUNT\nTOTAL\nPAGES\n3\n12\nMODEL\n2\n8\nSUM\n5\n20\nEr FR",
+      "readingOrder": [
+        "ITEM",
+        "COUNT",
+        "TOTAL",
+        "PAGES",
+        "3",
+        "12",
+        "MODEL",
+        "2",
+        "8",
+        "SUM",
+        "5",
+        "20",
+        "Er FR"
+      ],
+      "structureLabels": [
+        "table",
+        "three-rows",
+        "three-columns"
+      ],
+      "elapsedMs": 948,
+      "peakMemoryMb": 1652.82,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "table",
+      "documentClass": "table",
+      "documentSha256": "56894bebab2e13637dadaf18ccb62c6a8b0598c1124996c7192ef566cac519b1",
+      "repeat": 3,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:14.569Z",
+      "pageCount": 1,
+      "recognizedText": "ITEM\nCOUNT\nTOTAL\nPAGES\n3\n12\nMODEL\n2\n8\nSUM\n5\n20\nEr FR",
+      "readingOrder": [
+        "ITEM",
+        "COUNT",
+        "TOTAL",
+        "PAGES",
+        "3",
+        "12",
+        "MODEL",
+        "2",
+        "8",
+        "SUM",
+        "5",
+        "20",
+        "Er FR"
+      ],
+      "structureLabels": [
+        "table",
+        "three-rows",
+        "three-columns"
+      ],
+      "elapsedMs": 921,
+      "peakMemoryMb": 1653.21,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "equation",
+      "documentClass": "equation",
+      "documentSha256": "9a5b699a33bef07feba5e574176ea88df77d58848fc5896a8144b405bd5b3e7b",
+      "repeat": 1,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:15.663Z",
+      "pageCount": 1,
+      "recognizedText": "ENERGY RELATION\n$$\nE = m c ^ 2\n$$\nVARIABLES: E ENERGY, M MASS, C LIGHT SPEED",
+      "readingOrder": [
+        "ENERGY RELATION",
+        "$$",
+        "E = m c ^ 2",
+        "$$",
+        "VARIABLES: E ENERGY, M MASS, C LIGHT SPEED"
+      ],
+      "structureLabels": [
+        "display-equation"
+      ],
+      "elapsedMs": 130,
+      "peakMemoryMb": 1479.1,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "equation",
+      "documentClass": "equation",
+      "documentSha256": "9a5b699a33bef07feba5e574176ea88df77d58848fc5896a8144b405bd5b3e7b",
+      "repeat": 2,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:15.952Z",
+      "pageCount": 1,
+      "recognizedText": "ENERGY RELATION\n$$\nE = m c ^ 2\n$$\nVARIABLES: E ENERGY, M MASS, C LIGHT SPEED",
+      "readingOrder": [
+        "ENERGY RELATION",
+        "$$",
+        "E = m c ^ 2",
+        "$$",
+        "VARIABLES: E ENERGY, M MASS, C LIGHT SPEED"
+      ],
+      "structureLabels": [
+        "display-equation"
+      ],
+      "elapsedMs": 123,
+      "peakMemoryMb": 1447.58,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "equation",
+      "documentClass": "equation",
+      "documentSha256": "9a5b699a33bef07feba5e574176ea88df77d58848fc5896a8144b405bd5b3e7b",
+      "repeat": 3,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:16.108Z",
+      "pageCount": 1,
+      "recognizedText": "ENERGY RELATION\n$$\nE = m c ^ 2\n$$\nVARIABLES: E ENERGY, M MASS, C LIGHT SPEED",
+      "readingOrder": [
+        "ENERGY RELATION",
+        "$$",
+        "E = m c ^ 2",
+        "$$",
+        "VARIABLES: E ENERGY, M MASS, C LIGHT SPEED"
+      ],
+      "structureLabels": [
+        "display-equation"
+      ],
+      "elapsedMs": 125,
+      "peakMemoryMb": 1447.81,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "image-heavy",
+      "documentClass": "image-heavy",
+      "documentSha256": "46775ff86635e2e49511f87bff360b35c1c020e318f5b4ca5d11ca322f3c316d",
+      "repeat": 1,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:16.401Z",
+      "pageCount": 1,
+      "recognizedText": "IMAGE EVIDENCE SAMPLE\nFigure A\nFigure B\nFigure C",
+      "readingOrder": [
+        "IMAGE EVIDENCE SAMPLE",
+        "Figure A",
+        "Figure B",
+        "Figure C"
+      ],
+      "structureLabels": [],
+      "elapsedMs": 157,
+      "peakMemoryMb": 1505.25,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "image-heavy",
+      "documentClass": "image-heavy",
+      "documentSha256": "46775ff86635e2e49511f87bff360b35c1c020e318f5b4ca5d11ca322f3c316d",
+      "repeat": 2,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:16.690Z",
+      "pageCount": 1,
+      "recognizedText": "IMAGE EVIDENCE SAMPLE\nFigure A\nFigure B\nFigure C",
+      "readingOrder": [
+        "IMAGE EVIDENCE SAMPLE",
+        "Figure A",
+        "Figure B",
+        "Figure C"
+      ],
+      "structureLabels": [],
+      "elapsedMs": 155,
+      "peakMemoryMb": 1505.02,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    },
+    {
+      "documentId": "image-heavy",
+      "documentClass": "image-heavy",
+      "documentSha256": "46775ff86635e2e49511f87bff360b35c1c020e318f5b4ca5d11ca322f3c316d",
+      "repeat": 3,
+      "mode": "browser",
+      "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+      "ocrAccuracy": "bundled eng best_int",
+      "startedAt": "2026-09-29T17:22:16.987Z",
+      "pageCount": 1,
+      "recognizedText": "IMAGE EVIDENCE SAMPLE\nFigure A\nFigure B\nFigure C",
+      "readingOrder": [
+        "IMAGE EVIDENCE SAMPLE",
+        "Figure A",
+        "Figure B",
+        "Figure C"
+      ],
+      "structureLabels": [],
+      "elapsedMs": 159,
+      "peakMemoryMb": 1505.82,
+      "fallbackDetails": [
+        {
+          "pageNumber": 1,
+          "details": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { openDB } from "idb";
+import { ACTIVE_FORMAT_LIMITS } from "../shared/security-boundaries.js";
 // Keep the existing IndexedDB name so the GlyphMend rebrand does not orphan
 // users' resumable workspaces. This is a persistence compatibility identifier,
 // not the current product name.
@@ -154,6 +155,11 @@ export function serializeWorkspace(value) {
   );
 }
 export function deserializeWorkspace(text) {
+  if (typeof text !== "string" || text.length > ACTIVE_FORMAT_LIMITS.maxWorkspaceImportBytes) {
+    throw new RangeError(
+      `Workspace file exceeds the ${Math.floor(ACTIVE_FORMAT_LIMITS.maxWorkspaceImportBytes / (1024 * 1024))} MiB import limit.`,
+    );
+  }
   const value = JSON.parse(text, (_key, item) => {
     if (item?.__binary === "array-buffer") return base64ToArray(item.base64);
     if (item?.__binary === "uint8-array")
@@ -164,6 +170,12 @@ export function deserializeWorkspace(text) {
     throw new Error("Unsupported workspace format.");
   if (typeof value.pdfBytes === "string")
     value.pdfBytes = base64ToArray(value.pdfBytes);
+  const pdfByteLength = value.pdfBytes instanceof ArrayBuffer
+    ? value.pdfBytes.byteLength
+    : ArrayBuffer.isView(value.pdfBytes) ? value.pdfBytes.byteLength : 0;
+  if (pdfByteLength > ACTIVE_FORMAT_LIMITS.maxPdfBytes) {
+    throw new RangeError("Workspace PDF exceeds the 512 MiB document limit.");
+  }
   const compatible = value.checkpointRevision === CHECKPOINT_REVISION;
   return {
     ...value,
@@ -184,8 +196,15 @@ function arrayToBase64(buffer) {
   return btoa(value);
 }
 function base64ToArray(value) {
+  const maxEncodedChars = Math.ceil(ACTIVE_FORMAT_LIMITS.maxPdfBytes / 3) * 4;
+  if (typeof value !== "string" || value.length > maxEncodedChars) {
+    throw new RangeError("Workspace binary data exceeds the 512 MiB document limit.");
+  }
   const binary = atob(value),
     bytes = new Uint8Array(binary.length);
+  if (binary.length > ACTIVE_FORMAT_LIMITS.maxPdfBytes) {
+    throw new RangeError("Workspace binary data exceeds the 512 MiB document limit.");
+  }
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes.buffer;
 }

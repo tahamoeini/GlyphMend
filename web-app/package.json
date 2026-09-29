@@ -11,7 +11,7 @@
         "predev": "npm run brand:sync && npm run native:deps",
         "dev": "vite",
         "prebuild": "npm run brand:sync && npm run native:deps",
-        "build": "vite build",
+        "build": "vite build && node ./scripts/verify-mupdf-assets.mjs",
         "lint": "node ./scripts/quality-check.mjs lint",
         "prepreview": "npm run brand:sync && npm run native:deps",
         "preview": "vite preview",
@@ -41,5 +41,6 @@
     "optionalDependencies": {
         "@esbuild/win32-x64": "^0.28.2",
         "@rollup/rollup-win32-x64-msvc": "^4.63.1"
-    }
+    },
+    "license": "AGPL-3.0-or-later"
 }

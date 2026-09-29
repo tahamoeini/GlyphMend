@@ -3,6 +3,7 @@ import {
   reconstructableBundleToWorkspace,
 } from "./shared/reconstructable-bundle-import.js";
 import { serializeWorkspace } from "./storage/workspace-db.js";
+import { ACTIVE_FORMAT_LIMITS, assertImportFileSize } from "./shared/security-boundaries.js";
 
 function toast(message, error = false) {
   const element = document.getElementById("toast");
@@ -70,6 +71,7 @@ export function initBundleImport() {
       event.preventDefault();
       event.stopImmediatePropagation();
       try {
+        assertImportFileSize(file, ACTIVE_FORMAT_LIMITS.maxBundleImportBytes, "Reconstructable bundle");
         toast("Validating reconstructable bundle…");
         const imported = await importReconstructableBundle(await file.arrayBuffer());
         const baseName = imported.manifest.exportName || file.name.replace(/\.reconstructable\.zip$/i, "") || "document";

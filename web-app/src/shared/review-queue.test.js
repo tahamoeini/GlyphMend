@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildReviewQueue, normalizeReviewItem, reviewQueueDecide, reviewQueueSummary } from "./review-queue.js";
+import { ACTIVE_FORMAT_LIMITS } from "./security-boundaries.js";
 
 describe("review queue model", () => {
   it("normalizes equation review items without losing source evidence", () => {
@@ -52,5 +53,31 @@ describe("review queue model", () => {
 
     expect(queue.map((item) => item.id)).toEqual(["a", "b"]);
     expect(reviewQueueSummary(queue)).toMatchObject({ total: 2, review: 1, preserved: 1 });
+  });
+
+  it("does not count unrelated per-page document IR against the review-item safety limit", () => {
+    const page = {
+      page: 20,
+      documentIR: { blocks: [{ sourceSpanIds: Array.from({ length: 100_001 }, (_, index) => `span-${index}`) }] },
+      reviewItems: [],
+    };
+
+    expect(buildReviewQueue({ 20: page })).toEqual([]);
+  });
+
+  it("still rejects an oversized review item", () => {
+    const oversizedItem = {
+      id: "large-review-item",
+      page: 1,
+      sourceAsset: { extensionData: Array.from({ length: 100_001 }, (_, index) => index) },
+    };
+
+    expect(() => buildReviewQueue({ 1: { page: 1, reviewItems: [oversizedItem] } })).toThrow(/structured-data node limit/);
+  });
+
+  it("bounds total review items across all page checkpoints", () => {
+    const reviewItems = Array.from({ length: ACTIVE_FORMAT_LIMITS.maxReviewQueueItems + 1 }, (_, index) => ({ id: `review-${index}` }));
+
+    expect(() => buildReviewQueue({ 1: { page: 1, reviewItems } })).toThrow(/total review item limit/);
   });
 });

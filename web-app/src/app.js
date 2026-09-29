@@ -12,6 +12,8 @@ import {
   qualityAudit,
 } from "./features/extraction/cleanup.js";
 import { documentIRFromPages } from "./features/extraction/document-ir.js";
+import { pendingExtractionPages, planExtractionBatches } from "./features/extraction/batch-plan.js";
+import { runWithBrowserFallback } from "./features/extraction/run-with-fallback.js";
 import {
   appendStoredLog,
   clearWorkspace,
@@ -40,9 +42,12 @@ import {
 import { visualIRToAccessibleDescription } from "./shared/visual-accessibility.js";
 import { buildReconstructableBundle } from "./shared/reconstructable-bundle.js";
 import {
+  ACTIVE_FORMAT_LIMITS,
+  assertImportFileSize,
   validateExtractionRequest,
   validateExtractionWorkerMessage,
 } from "./shared/security-boundaries.js";
+import { createWorkerStartupWatchdog } from "./features/extraction/worker-startup.js";
 import {
   getLocale,
   localePhrase,
@@ -101,6 +106,8 @@ const state = {
   previewRenderToken: 0,
   checkpointWrites: new Set(),
   checkpointError: null,
+  companionBridge: null,
+  companionCapabilities: [],
   reviewQueue: [],
   selectedReviewId: null,
   sheetReturnFocus: { sidebar: null, inspector: null },
@@ -647,25 +654,31 @@ function runBatch(batch, wanted) {
     );
     state.worker = worker;
     let settled = false;
+    let startupWatchdog;
     const failedPages = new Set();
     const finish = (error, result = { failedPages: [...failedPages] }) => {
       if (settled) return;
       settled = true;
-      clearTimeout(startupTimeout);
+      startupWatchdog?.clear();
       worker.terminate();
       state.worker = null;
       state.abortBatch = null;
       error ? reject(error) : resolve(result);
     };
-    const startupTimeout = setTimeout(
-      () =>
-        finish(
-          new Error(
-            "The extraction engine did not start within 45 seconds. Verify that /mupdf/mupdf.js and /mupdf/mupdf-wasm.wasm are deployed and reload the application.",
-          ),
-        ),
-      45000,
-    );
+    startupWatchdog = createWorkerStartupWatchdog(({ stage, elapsedMs }) => {
+      const phase = stage === "worker-boot" ? "Extraction worker" : "MuPDF WebAssembly";
+      const action = stage === "worker-boot"
+        ? "Check browser worker errors and available memory."
+        : "Check that mupdf.js, mupdf-wasm.js, and mupdf-wasm.wasm load successfully under /mupdf/.";
+      const seconds = Math.round(elapsedMs / 1000);
+      const error = Object.assign(
+        new Error(phase + " startup timed out after " + seconds + " seconds (phase: " + stage + "; elapsed: " + elapsedMs + " ms). " + action),
+        { startupStage: stage, elapsedMs },
+      );
+      log("startup-timeout", error.message, { stage, elapsedMs }, "error");
+      finish(error);
+    });
+    startupWatchdog.start();
     state.abortBatch = (reason) =>
       finish(Object.assign(new Error(reason), { aborted: true }));
     worker.onmessage = ({ data: rawData }) => {
@@ -679,12 +692,24 @@ function runBatch(batch, wanted) {
         return;
       }
       if (data.type === "worker-started") {
-        log("worker-start", "Extraction worker started", {}, "debug");
+        const elapsedMs = startupWatchdog.workerStarted();
+        log("worker-start", "Extraction worker started", { stage: "worker-boot", elapsedMs }, "debug");
+        return;
+      }
+      if (data.type === "engine-loading") {
+        log("engine-loading", "MuPDF WebAssembly initialization started", {
+          stage: data.stage,
+          elapsedMs: data.elapsedMs,
+        }, "debug");
         return;
       }
       if (data.type === "engine-ready") {
-        clearTimeout(startupTimeout);
-        log("engine-ready", "MuPDF WebAssembly engine loaded", {}, "debug");
+        const observedElapsedMs = startupWatchdog.engineReady();
+        log("engine-ready", "MuPDF WebAssembly engine loaded", {
+          stage: data.stage,
+          elapsedMs: data.elapsedMs,
+          observedElapsedMs,
+        }, "debug");
         return;
       }
       if (data.type === "page-start") {
@@ -758,17 +783,42 @@ function runBatch(batch, wanted) {
         );
       }
       if (data.type === "done") finish();
-      if (data.type === "error") finish(new Error(data.message));
+      if (data.type === "error") {
+        const message = data.stage === "mupdf-load"
+          ? "MuPDF WebAssembly startup failed after " + data.elapsedMs + " ms: " + data.message
+          : data.message;
+        finish(Object.assign(new Error(message), {
+          startupStage: data.stage,
+          elapsedMs: data.elapsedMs,
+        }));
+      }
     };
-    worker.onerror = (event) =>
-      finish(
-        Object.assign(
-          new Error(
-            event.message || "The extraction worker stopped unexpectedly.",
-          ),
-          { workerCrash: true, filename: event.filename, lineno: event.lineno },
-        ),
-      );
+    worker.onerror = (event) => {
+      const phase = startupWatchdog.snapshot();
+      const detail = phase.stage
+        ? " (phase: " + phase.stage + "; elapsed: " + phase.elapsedMs + " ms)"
+        : "";
+      finish(Object.assign(
+        new Error((event.message || "The extraction worker stopped unexpectedly.") + detail),
+        {
+          workerCrash: true,
+          filename: event.filename,
+          lineno: event.lineno,
+          startupStage: phase.stage,
+          elapsedMs: phase.elapsedMs,
+        },
+      ));
+    };
+    worker.onmessageerror = () => {
+      const phase = startupWatchdog.snapshot();
+      const detail = phase.stage
+        ? " (phase: " + phase.stage + "; elapsed: " + phase.elapsedMs + " ms)"
+        : "";
+      finish(Object.assign(
+        new Error("The extraction worker returned a message that could not be deserialized." + detail),
+        { startupStage: phase.stage, elapsedMs: phase.elapsedMs },
+      ));
+    };
     const bytes = state.pdfBytes.slice(0);
     let request;
     try {
@@ -791,9 +841,132 @@ function runBatch(batch, wanted) {
       finish(new Error(`Rejected extraction request: ${error.message}`));
       return;
     }
-    worker.postMessage(request, [bytes]);
+    try {
+      worker.postMessage(request, [bytes]);
+    } catch (cause) {
+      const phase = startupWatchdog.snapshot();
+      const message = "Could not send the extraction request to its worker"
+        + (phase.stage ? " (phase: " + phase.stage + "; elapsed: " + phase.elapsedMs + " ms)" : "")
+        + ": " + (cause?.message || String(cause));
+      finish(Object.assign(new Error(message), {
+        startupStage: phase.stage,
+        elapsedMs: phase.elapsedMs,
+      }));
+    }
   });
 }
+async function runCompanionBatch(batch, wanted) {
+  const bridge = state.companionBridge;
+  if (!bridge) throw new Error("No Companion connection is active.");
+  if (wanted.length > 100 && bridge.session?.protocolVersion?.minor < 3) {
+    throw new Error("The connected Companion does not support bounded result acknowledgement.");
+  }
+  const supportsExtraction = state.companionCapabilities.some(
+    (capability) => capability.id === "glyphmend.document.extract.v2" && !capability.diagnosticOnly,
+  );
+  if (!supportsExtraction) throw new Error("The connected Companion does not support document extraction.");
+
+  const controller = new AbortController();
+  state.abortBatch = () => controller.abort();
+  let companionJobId;
+  try {
+    const document = await bridge.extractDocument({
+      bytes: state.pdfBytes,
+      pageCount: state.pageCount,
+      selectedPages: batch,
+      ocrAccuracy: $("companionOcrAccuracy").value,
+      useOcr: state.options.useOcr,
+      forceOcr: state.options.forceOcr,
+      password: $("pdfPassword").value || undefined,
+      signal: controller.signal,
+      onJobCreated: (jobId) => { companionJobId = jobId; },
+      onProgress: (event) => {
+        if (event.eventType !== "job-progress") return;
+        const progress = event.payload?.progress || {};
+        const done = wanted.filter((page) => state.pages[page]).length;
+        setStatus(
+          `Companion: ${progress.phase || "processing"} (${progress.completedPages || 0}/${progress.totalPages || batch.length})`,
+          done,
+          wanted.length,
+        );
+      },
+    });
+    if (controller.signal.aborted) throw Object.assign(new Error("Companion extraction stopped."), { aborted: true });
+    const byPage = new Map(document.pages.map((page) => [page.pageNumber, page]));
+    if (byPage.size !== batch.length || batch.some((page) => !byPage.has(page))) {
+      throw new Error("Companion returned an incomplete page set.");
+    }
+    const engine = document.metadata?.engine || { id: "glyphmend.pdfium-tesseract", version: "unknown" };
+    state.engine = engine.id;
+    for (const pageNumber of batch) {
+      const page = byPage.get(pageNumber);
+      const semanticDocument = createSemanticDocumentIR({
+        documentId: document.documentId,
+        metadata: document.metadata,
+        pages: [page],
+      });
+      const text = page.nodes
+        .map((node) => String(node.content?.markdown ?? node.content?.text ?? ""))
+        .filter(Boolean)
+        .join("\n\n");
+      const checkpoint = {
+        page: pageNumber,
+        text,
+        documentIR: null,
+        semanticDocument,
+        bodySize: new TextEncoder().encode(text).byteLength,
+        assets: [],
+        edges: {},
+        quality: {
+          engine: engine.id,
+          engineVersion: engine.version,
+          objectCount: page.layout?.pageObjectCount ?? null,
+          fallback: page.source?.fallback || null,
+        },
+        engine: engine.id,
+      };
+      state.pages[pageNumber] = checkpoint;
+      saveCheckpoint(checkpoint);
+      syncReviewQueue();
+      const done = wanted.filter((pageNo) => state.pages[pageNo]).length;
+      setStatus(`Companion extracted page ${pageNumber}`, done, wanted.length);
+      if (page.source?.fallback?.ocrError) {
+        log("companion-page-fallback", `OCR fallback on page ${pageNumber}`, page.source.fallback, "warning");
+      }
+      log("page-complete", `Extracted page ${pageNumber} with Companion`, checkpoint.quality, "debug");
+    }
+    await waitForCheckpointWrites();
+    if (companionJobId && typeof bridge.acknowledgeResult === "function") {
+      try {
+        await bridge.acknowledgeResult(companionJobId);
+      } catch (error) {
+        const warning = {
+          type: "companion-result-retained",
+          message: "Companion kept a completed result because it could not confirm the saved checkpoint.",
+          reason: error.message,
+        };
+        state.warnings.push(warning);
+        log("companion-result-retained", warning.message, { reason: error.message }, "warning");
+      }
+    }
+    return { failedPages: [] };
+  } catch (error) {
+    if (controller.signal.aborted) throw Object.assign(error, { aborted: true });
+    throw error;
+  } finally {
+    if (state.abortBatch) state.abortBatch = null;
+  }
+}
+
+async function runBrowserBatches(pages, wanted, batchSize) {
+  const failedPages = [];
+  for (const batch of planExtractionBatches(pages, { batchSize })) {
+    const result = await runBatch(batch, wanted);
+    failedPages.push(...result.failedPages);
+  }
+  return { failedPages };
+}
+
 async function extract() {
   if (!state.pdfBytes) return;
   let wanted;
@@ -802,12 +975,14 @@ async function extract() {
   } catch (error) {
     return toast(error.message, true);
   }
-  const remaining = wanted.filter((page) => !state.pages[page]);
+  const remaining = pendingExtractionPages(wanted, state.pages);
   if (!remaining.length) {
     finalize(wanted);
     return toast("Selected pages are already extracted.");
   }
   state.options = options();
+  let activeEngine = $("extractionEngine")?.value === "companion" ? "companion" : "browser";
+  state.engine = activeEngine === "companion" ? "glyphmend.pdfium-tesseract" : "mupdf-wasm";
   state.checkpointError = null;
   state.startedAt = new Date().toISOString();
   setWorking(true);
@@ -820,24 +995,44 @@ async function extract() {
     1,
     Math.min(100, Number($("checkpointPages").value) || 20),
   );
+  const batches = planExtractionBatches(remaining, { engine: activeEngine, batchSize });
   const retriedPages = new Set();
-  log("extract-start", "Starting browser extraction", {
+  log("extract-start", `Starting ${activeEngine} extraction`, {
     selectedPages: wanted.length,
     resumedPages: wanted.length - remaining.length,
     batchSize,
     options: state.options,
   });
   try {
-    for (let offset = 0; offset < remaining.length; offset += batchSize) {
+    for (const batch of batches) {
       if (!state.running) break;
-      const batch = remaining.slice(offset, offset + batchSize);
       log(
         "batch-start",
-        "Starting bounded extraction batch",
+        activeEngine === "companion" ? "Starting bounded Companion extraction batch" : "Starting bounded browser extraction batch",
         { firstPage: batch[0], lastPage: batch.at(-1), pages: batch.length },
         "debug",
       );
-      const result = await runBatch(batch, wanted);
+      let result;
+      if (activeEngine === "companion") {
+        result = await runWithBrowserFallback({
+          companion: () => runCompanionBatch(batch, wanted),
+          browser: () => runBrowserBatches(batch, wanted, batchSize),
+          onFallback: (error) => {
+            activeEngine = "browser";
+            state.engine = "mupdf-wasm";
+            const warning = {
+              type: "companion-fallback",
+              message: "Companion was unavailable or failed; this and remaining pages will use browser extraction.",
+              reason: error.message,
+            };
+            state.warnings.push(warning);
+            log("engine-fallback", warning.message, { reason: error.message }, "warning");
+            setStatus("Companion unavailable; switching to browser extraction…", wanted.filter((page) => state.pages[page]).length, wanted.length);
+          },
+        });
+      } else {
+        result = await runBatch(batch, wanted);
+      }
       const retryPages = result.failedPages.filter(
         (page) => !retriedPages.has(page),
       );
@@ -896,7 +1091,12 @@ async function extract() {
       log(
         error.workerCrash ? "worker-crash" : "fatal",
         error.message,
-        { filename: error.filename, lineno: error.lineno },
+        {
+          filename: error.filename,
+          lineno: error.lineno,
+          stage: error.startupStage,
+          elapsedMs: error.elapsedMs,
+        },
         "error",
       );
       toast(error.message, true);
@@ -1696,11 +1896,70 @@ function syncWorkspaceLayoutState() {
   setInspectorExpanded(compact && document.body.classList.contains("inspector-open"));
   syncSheetAccessibility();
 }
+function bindCompanionControl(buttonId, endpointId, codeId, statusId) {
+  const button = $(buttonId), status = $(statusId);
+
+  button.onclick = async () => {
+    const endpoint = $(endpointId).value.trim();
+    const pairingCode = $(codeId).value.trim();
+    $(codeId).value = "";
+    status.textContent = "Connecting to the optional local companion…";
+    try {
+      const { createCompanionBridge } = await import("./features/companion/bridge.js");
+      const bridge = await createCompanionBridge();
+      const connection = await bridge.connect(endpoint, pairingCode);
+      if (connection.status === "connected") {
+        state.companionBridge = bridge;
+        state.companionCapabilities = connection.capabilities || [];
+      }
+      const canExtract = state.companionCapabilities.some(
+        (capability) => capability.id === "glyphmend.document.extract.v2" && !capability.diagnosticOnly,
+      );
+      status.textContent = connection.status === "connected"
+        ? canExtract
+          ? "Companion connected. Select it for an extraction job; browser remains the default."
+          : "Companion connected, but this version does not provide document extraction. Browser processing remains available."
+        : `Companion ${connection.status}; browser processing remains available.`;
+    } catch {
+      status.textContent = "Companion unavailable; browser processing remains available.";
+    }
+  };
+}
+async function connectCompanionFromFragment() {
+  const fragment = location.hash;
+  const parameters = new URLSearchParams(fragment.replace(/^#/, ""));
+  if (!parameters.has("companionCode")) return;
+  history.replaceState(null, "", `${location.pathname}${location.search}`);
+  try {
+    const { createCompanionBridge, readCompanionFragment } = await import("./features/companion/bridge.js");
+    const connectionData = readCompanionFragment(fragment);
+    if (!connectionData) return;
+    const bridge = await createCompanionBridge();
+    const connection = await bridge.connect(connectionData.endpoint, connectionData.pairingCode);
+    if (connection.status !== "connected") return;
+    state.companionBridge = bridge;
+    state.companionCapabilities = connection.capabilities || [];
+    const canExtract = state.companionCapabilities.some(
+      (capability) => capability.id === "glyphmend.document.extract.v2" && !capability.diagnosticOnly,
+    );
+    for (const id of ["welcomeCompanionStatus", "settingsCompanionStatus"]) {
+      const status = $(id);
+      if (status) status.textContent = canExtract
+        ? "Companion connected. Select it for an extraction job; browser remains the default."
+        : "Companion connected, but this version does not provide document extraction. Browser processing remains available.";
+    }
+  } catch {
+    // Fragment pairing is optional; the manual connection controls remain available.
+  }
+}
 function bind() {
-  syncAdaptivePreferences();
   syncThemePreference();
+  syncAdaptivePreferences();
   restoreSidebarPreference();
   requestAnimationFrame(() => syncTabIndicator());
+  bindCompanionControl("welcomeCompanionButton", "welcomeCompanionEndpoint", "welcomeCompanionCode", "welcomeCompanionStatus");
+  bindCompanionControl("settingsCompanionButton", "settingsCompanionEndpoint", "settingsCompanionCode", "settingsCompanionStatus");
+  void connectCompanionFromFragment();
   $("pdfInput").onchange = (e) => openFile(e.target.files[0]);
   const dz = $("dropZone");
   ["dragenter", "dragover"].forEach((n) =>
@@ -1755,14 +2014,26 @@ function bind() {
   $("exportWorkspaceButton").onclick = () => save("workspace");
   $("workspaceInput").onchange = async (e) => {
     try {
-      await restore(deserializeWorkspace(await e.target.files[0].text()));
+      const file = e.target.files[0];
+      if (!file) return;
+      assertImportFileSize(file, ACTIVE_FORMAT_LIMITS.maxWorkspaceImportBytes, "Workspace file");
+      await restore(deserializeWorkspace(await file.text()));
     } catch (error) {
       toast(error.message, true);
+    } finally {
+      e.target.value = "";
     }
   };
   $("markdownInput").onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    try {
+      assertImportFileSize(file, ACTIVE_FORMAT_LIMITS.maxMarkdownImportBytes, "Markdown file");
+    } catch (error) {
+      toast(error.message, true);
+      e.target.value = "";
+      return;
+    }
     Object.assign(state, {
       fileName: file.name.replace(/\.md$/i, ".pdf"),
       fileSize: 0,

@@ -1,0 +1,98 @@
+name: GlyphMend Companion
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ["companion/**", "docs/**", "README.md", ".github/workflows/companion.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+
+concurrency:
+  group: companion-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: companion
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: 1.97.0
+          components: rustfmt, clippy
+          cache: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+      - name: Install Linux OCR build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config
+      - name: Install macOS OCR build dependencies
+        if: runner.os == 'macOS'
+        run: brew install tesseract leptonica
+      - name: Install Windows OCR build dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install tesseract:x64-windows
+      - name: Configure dynamic Tesseract linking
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
+          "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin" >> $env:GITHUB_PATH
+      - run: cargo fmt --check -p companion-contract -p companion-core -p companion-extractor -p companion-service -p companion-bridge -p companion-cli
+      - run: cargo clippy --workspace --exclude companion-tauri -- -D warnings
+      - run: cargo test --workspace --exclude companion-tauri
+      - run: cargo build -p companion-cli
+      - name: Install PDFium test runtime
+        shell: bash
+        env:
+          OS_NAME: ${{ runner.os }}
+        run: |
+          set -euo pipefail
+          if [[ "$OS_NAME" == "Windows" ]]; then asset=pdfium-win-x64.tgz; elif [[ "$OS_NAME" == "Linux" ]]; then if [[ "$(uname -m)" == "aarch64" ]]; then asset=pdfium-linux-arm64.tgz; else asset=pdfium-linux-x64.tgz; fi; elif [[ "$(uname -m)" == "x86_64" ]]; then asset=pdfium-mac-x64.tgz; else asset=pdfium-mac-arm64.tgz; fi
+          curl -fsSL "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8066/$asset" -o /tmp/pdfium.tgz
+          mkdir -p /tmp/pdfium-runtime && tar -xzf /tmp/pdfium.tgz -C /tmp/pdfium-runtime
+          if [[ "$OS_NAME" == "Windows" ]]; then find /tmp/pdfium-runtime -iname pdfium.dll -exec cp -L '{}' target/debug/ \;; elif [[ "$OS_NAME" == "macOS" ]]; then find /tmp/pdfium-runtime -name libpdfium.dylib -exec cp -L '{}' target/debug/ \;; else find /tmp/pdfium-runtime -name libpdfium.so -exec cp -L '{}' target/debug/ \;; fi
+          test -n "$(find target/debug -maxdepth 1 \( -name 'pdfium*' -o -name 'libpdfium*' \) -print -quit)"
+          for model in fast best; do
+            commit=$(git ls-remote "https://github.com/tesseract-ocr/tessdata_${model}.git" HEAD | cut -f1)
+            mkdir -p "target/debug/tessdata/$model"
+            curl -fsSL "https://raw.githubusercontent.com/tesseract-ocr/tessdata_${model}/$commit/eng.traineddata" -o "target/debug/tessdata/$model/eng.traineddata"
+          done
+      - name: Generate and verify labeled PDF fixtures
+        run: |
+          node benchmarks/generate-corpus.mjs
+          node benchmarks/check-corpus.mjs
+      - run: node tests/browser-runtime-e2e.mjs
+      - run: node tests/document-extraction-e2e.mjs
+
+  dependency-policy:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: companion
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: 1.97.0
+          cache: false
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-deny
+      - run: cargo deny check
