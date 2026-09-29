@@ -1,0 +1,413 @@
+{
+  "schemaVersion": 1,
+  "kind": "browser-only",
+  "corpusManifestSha256": "fe7e67fb46e555a2e9c9374728dd91dad95ee909887225243812e1846cdbd59e",
+  "environment": {
+    "platform": "linux-x64",
+    "browserVersion": "Google Chrome for Testing 154.0.8037.0",
+    "companionVersion": null,
+    "gitCommit": "c7b803484ff6376c16bf1e01fbb9b2587d40f091",
+    "workingTreeDirty": true,
+    "workingTreeStatusSha256": "b2ea3a1c96aee31477a180dd320f3727ed68b5586abcecbf128094adeb727527",
+    "trackedDiffSha256": "441b3047f3e245c98deed309764a39f4c6fcc1c2fab10e1161bde13f6f0b7d2b",
+    "browserOcrModel": "bundled eng best_int",
+    "companionOcrAccuracy": "fast",
+    "repetitions": 3,
+    "startedAt": "2026-09-29T17:22:03.682Z",
+    "browserOcrModelSha256": "5dc5d8d640a212c9d6184921ba103b186f50e0fed9ee716c53e6b312b400d747",
+    "finishedAt": "2026-09-29T17:22:17.275Z"
+  },
+  "browserRegressionEvidence": "Browser-only smoke run: the six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed. This is not a paired Companion benchmark.",
+  "classes": {
+    "text-heavy": {
+      "browserRuns": [
+        {
+          "repeat": 1,
+          "characterErrorRate": 0,
+          "wordErrorRate": 0,
+          "readingOrderError": 0,
+          "structureF1": 0.3076923076923077,
+          "latencyMs": 435,
+          "peakMemoryMb": 1385.96,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 2,
+          "characterErrorRate": 0,
+          "wordErrorRate": 0,
+          "readingOrderError": 0,
+          "structureF1": 0.3076923076923077,
+          "latencyMs": 148,
+          "peakMemoryMb": 1410.49,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 3,
+          "characterErrorRate": 0,
+          "wordErrorRate": 0,
+          "readingOrderError": 0,
+          "structureF1": 0.3076923076923077,
+          "latencyMs": 135,
+          "peakMemoryMb": 1412.64,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        }
+      ],
+      "median": {
+        "characterErrorRate": 0,
+        "wordErrorRate": 0,
+        "readingOrderError": 0,
+        "structureF1": 0.3076923076923077,
+        "latencyMs": 148,
+        "peakMemoryMb": 1410.49
+      },
+      "browserRegressionPassed": true,
+      "browserRegressionEvidence": "Browser-only smoke run: the six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed. This is not a paired Companion benchmark."
+    },
+    "scanned-english": {
+      "browserRuns": [
+        {
+          "repeat": 1,
+          "characterErrorRate": 0.23,
+          "wordErrorRate": 0.8125,
+          "readingOrderError": 0,
+          "structureF1": 1,
+          "latencyMs": 1173,
+          "peakMemoryMb": 1654.48,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 2,
+          "characterErrorRate": 0.23,
+          "wordErrorRate": 0.8125,
+          "readingOrderError": 0,
+          "structureF1": 1,
+          "latencyMs": 1108,
+          "peakMemoryMb": 1665.32,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 3,
+          "characterErrorRate": 0.23,
+          "wordErrorRate": 0.8125,
+          "readingOrderError": 0,
+          "structureF1": 1,
+          "latencyMs": 1093,
+          "peakMemoryMb": 1667.04,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        }
+      ],
+      "median": {
+        "characterErrorRate": 0.23,
+        "wordErrorRate": 0.8125,
+        "readingOrderError": 0,
+        "structureF1": 1,
+        "latencyMs": 1108,
+        "peakMemoryMb": 1665.32
+      },
+      "browserRegressionPassed": true,
+      "browserRegressionEvidence": "Browser-only smoke run: the six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed. This is not a paired Companion benchmark."
+    },
+    "multi-column": {
+      "browserRuns": [
+        {
+          "repeat": 1,
+          "characterErrorRate": 0.28488372093023256,
+          "wordErrorRate": 0.4,
+          "readingOrderError": 0.75,
+          "structureF1": 0,
+          "latencyMs": 137,
+          "peakMemoryMb": 1488.33,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 2,
+          "characterErrorRate": 0.28488372093023256,
+          "wordErrorRate": 0.4,
+          "readingOrderError": 0.75,
+          "structureF1": 0,
+          "latencyMs": 116,
+          "peakMemoryMb": 1451.3,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 3,
+          "characterErrorRate": 0.28488372093023256,
+          "wordErrorRate": 0.4,
+          "readingOrderError": 0.75,
+          "structureF1": 0,
+          "latencyMs": 119,
+          "peakMemoryMb": 1451.3,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        }
+      ],
+      "median": {
+        "characterErrorRate": 0.28488372093023256,
+        "wordErrorRate": 0.4,
+        "readingOrderError": 0.75,
+        "structureF1": 0,
+        "latencyMs": 119,
+        "peakMemoryMb": 1451.3
+      },
+      "browserRegressionPassed": true,
+      "browserRegressionEvidence": "Browser-only smoke run: the six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed. This is not a paired Companion benchmark."
+    },
+    "table": {
+      "browserRuns": [
+        {
+          "repeat": 1,
+          "characterErrorRate": 0.13043478260869565,
+          "wordErrorRate": 0.16666666666666666,
+          "readingOrderError": 0.08333333333333333,
+          "structureF1": 1,
+          "latencyMs": 937,
+          "peakMemoryMb": 1657.74,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 2,
+          "characterErrorRate": 0.13043478260869565,
+          "wordErrorRate": 0.16666666666666666,
+          "readingOrderError": 0.08333333333333333,
+          "structureF1": 1,
+          "latencyMs": 948,
+          "peakMemoryMb": 1652.82,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 3,
+          "characterErrorRate": 0.13043478260869565,
+          "wordErrorRate": 0.16666666666666666,
+          "readingOrderError": 0.08333333333333333,
+          "structureF1": 1,
+          "latencyMs": 921,
+          "peakMemoryMb": 1653.21,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        }
+      ],
+      "median": {
+        "characterErrorRate": 0.13043478260869565,
+        "wordErrorRate": 0.16666666666666666,
+        "readingOrderError": 0.08333333333333333,
+        "structureF1": 1,
+        "latencyMs": 937,
+        "peakMemoryMb": 1653.21
+      },
+      "browserRegressionPassed": true,
+      "browserRegressionEvidence": "Browser-only smoke run: the six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed. This is not a paired Companion benchmark."
+    },
+    "equation": {
+      "browserRuns": [
+        {
+          "repeat": 1,
+          "characterErrorRate": 0,
+          "wordErrorRate": 0,
+          "readingOrderError": 0,
+          "structureF1": 0.5,
+          "latencyMs": 130,
+          "peakMemoryMb": 1479.1,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 2,
+          "characterErrorRate": 0,
+          "wordErrorRate": 0,
+          "readingOrderError": 0,
+          "structureF1": 0.5,
+          "latencyMs": 123,
+          "peakMemoryMb": 1447.58,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 3,
+          "characterErrorRate": 0,
+          "wordErrorRate": 0,
+          "readingOrderError": 0,
+          "structureF1": 0.5,
+          "latencyMs": 125,
+          "peakMemoryMb": 1447.81,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        }
+      ],
+      "median": {
+        "characterErrorRate": 0,
+        "wordErrorRate": 0,
+        "readingOrderError": 0,
+        "structureF1": 0.5,
+        "latencyMs": 125,
+        "peakMemoryMb": 1447.81
+      },
+      "browserRegressionPassed": true,
+      "browserRegressionEvidence": "Browser-only smoke run: the six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed. This is not a paired Companion benchmark."
+    },
+    "image-heavy": {
+      "browserRuns": [
+        {
+          "repeat": 1,
+          "characterErrorRate": 0,
+          "wordErrorRate": 0,
+          "readingOrderError": 0,
+          "structureF1": 0,
+          "latencyMs": 157,
+          "peakMemoryMb": 1505.25,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 2,
+          "characterErrorRate": 0,
+          "wordErrorRate": 0,
+          "readingOrderError": 0,
+          "structureF1": 0,
+          "latencyMs": 155,
+          "peakMemoryMb": 1505.02,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        },
+        {
+          "repeat": 3,
+          "characterErrorRate": 0,
+          "wordErrorRate": 0,
+          "readingOrderError": 0,
+          "structureF1": 0,
+          "latencyMs": 159,
+          "peakMemoryMb": 1505.82,
+          "engineVersion": "MuPDF 1.28.1; Tesseract.js 7.0.0",
+          "ocrAccuracy": "bundled eng best_int",
+          "fallbackDetails": [
+            {
+              "pageNumber": 1,
+              "details": []
+            }
+          ]
+        }
+      ],
+      "median": {
+        "characterErrorRate": 0,
+        "wordErrorRate": 0,
+        "readingOrderError": 0,
+        "structureF1": 0,
+        "latencyMs": 157,
+        "peakMemoryMb": 1505.25
+      },
+      "browserRegressionPassed": true,
+      "browserRegressionEvidence": "Browser-only smoke run: the six labeled fixtures completed through the browser extraction worker; npm license:check, lint, typecheck, test, and build passed. This is not a paired Companion benchmark."
+    }
+  }
+}

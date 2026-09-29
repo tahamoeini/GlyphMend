@@ -119,6 +119,16 @@ describe("application UI contract", () => {
     );
   });
 
+  it("shows copyright, AGPL permissions, warranty notice, source, and license", () => {
+    const footer = document.querySelector(".creator-attribution");
+    expect(footer.getAttribute("aria-label")).toBe("Copyright and license information");
+    expect(footer.textContent).toContain("Copyright © 2026 Taha Moeini");
+    expect(footer.textContent).toContain("You may copy and modify this program under AGPL-3.0-or-later");
+    expect(footer.textContent).toContain("No warranty.");
+    expect(document.getElementById("sourceCodeLink").href).toContain("/web-app");
+    expect(document.getElementById("licenseLink").href).toContain("/web-app/LICENSE");
+  });
+
   it("exposes accessible document tabs and local export actions", () => {
     const tabs = [...document.querySelectorAll('[role="tab"]')];
 

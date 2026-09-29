@@ -1,5 +1,5 @@
 import { parseLatexToMathIR } from "./mathir-parser.js";
-import { assertSafeStructuredValue } from "./security-boundaries.js";
+import { ACTIVE_FORMAT_LIMITS, assertSafeStructuredValue } from "./security-boundaries.js";
 
 const REVIEW_STATUSES = new Set(["queued", "accepted", "review", "preserved"]);
 
@@ -162,10 +162,19 @@ export function serializeReviewItem(value = {}) {
 }
 
 export function buildReviewQueue(pages = {}) {
-  assertSafeStructuredValue(pages, "Review queue pages");
-  return Object.values(pages)
-    .flatMap((page) => Array.isArray(page?.reviewItems) ? page.reviewItems.map((item) => normalizeReviewItem({ ...item, page: page.page })) : [])
-    .sort((left, right) => left.page - right.page || left.id.localeCompare(right.id));
+  if (!isPlainObject(pages)) return [];
+  const queue = [];
+  for (const page of Object.values(pages)) {
+    if (!isPlainObject(page) || !Array.isArray(page.reviewItems)) continue;
+    if (queue.length + page.reviewItems.length > ACTIVE_FORMAT_LIMITS.maxReviewQueueItems) {
+      throw new RangeError("Review queue exceeds the total review item limit.");
+    }
+    for (const item of page.reviewItems) {
+      queue.push(normalizeReviewItem({ ...(isPlainObject(item) ? item : {}), page: page.page }));
+    }
+  }
+  assertSafeStructuredValue(queue, "Review queue");
+  return queue.sort((left, right) => left.page - right.page || left.id.localeCompare(right.id));
 }
 
 export function reviewQueueSummary(queue = []) {

@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,6 +7,7 @@ const appDir = resolve(scriptDir, "..");
 const repoDir = resolve(appDir, "..");
 const publicDir = resolve(appDir, "public");
 const sourceConfig = resolve(repoDir, "branding.json");
+const sourceBrandDir = resolve(repoDir, "brand");
 
 const brand = JSON.parse(await readFile(sourceConfig, "utf8"));
 for (const key of ["name", "shortName", "slug", "cliName", "slogan", "logoPath"]) {
@@ -17,19 +18,21 @@ for (const key of ["name", "shortName", "slug", "cliName", "slogan", "logoPath"]
 
 const relativeLogo = brand.logoPath.replace(/^\.\//, "");
 const sourceLogo = resolve(repoDir, relativeLogo);
-const logoFromRepo = relative(repoDir, sourceLogo);
+const realBrandDir = await realpath(sourceBrandDir);
+const realSourceLogo = await realpath(sourceLogo);
+const logoFromBrand = relative(realBrandDir, realSourceLogo);
 if (
-  !logoFromRepo ||
-  logoFromRepo === ".." ||
-  logoFromRepo.startsWith(`..${sep}`) ||
-  isAbsolute(logoFromRepo)
+  !logoFromBrand ||
+  logoFromBrand === ".." ||
+  logoFromBrand.startsWith(`..${sep}`) ||
+  isAbsolute(logoFromBrand)
 ) {
-  throw new Error("branding.json logoPath must resolve to a file inside the repository for brand:sync");
+  throw new Error("branding.json logoPath must resolve to a file inside brand/ for brand:sync");
 }
-const publicLogo = resolve(publicDir, logoFromRepo);
+const publicLogo = resolve(publicDir, "brand", logoFromBrand);
 await mkdir(dirname(publicLogo), { recursive: true });
-await copyFile(sourceLogo, publicLogo);
-await copyFile(sourceLogo, resolve(publicDir, "icon.svg"));
+await copyFile(realSourceLogo, publicLogo);
+await copyFile(realSourceLogo, resolve(publicDir, "icon.svg"));
 await writeFile(resolve(publicDir, "branding.json"), `${JSON.stringify(brand, null, 2)}\n`, "utf8");
 
 const manifest = {

@@ -25,6 +25,9 @@ const BOOLEAN_EXTRACTION_OPTIONS = new Set(
 
 export const ACTIVE_FORMAT_LIMITS = Object.freeze({
   maxPdfBytes: 512 * 1024 * 1024,
+  maxWorkspaceImportBytes: 768 * 1024 * 1024,
+  maxMarkdownImportBytes: 64 * 1024 * 1024,
+  maxBundleImportBytes: 800 * 1024 * 1024,
   maxBatchPages: 100,
   maxPageNumber: 2000,
   maxPageTextChars: 16 * 1024 * 1024,
@@ -33,11 +36,21 @@ export const ACTIVE_FORMAT_LIMITS = Object.freeze({
   maxPageAssetBytes: 128 * 1024 * 1024,
   maxAssetsPerPage: 256,
   maxReviewItemsPerPage: 256,
+  maxReviewQueueItems: 10_000,
   maxStructuredDepth: 32,
   maxStructuredNodes: 100_000,
   maxPasswordChars: 1024,
   maxStatusChars: 512,
 });
+
+export function assertImportFileSize(file, maximumBytes, label) {
+  if (!file || !Number.isSafeInteger(file.size) || file.size < 0) {
+    throw new TypeError(`${label} has an invalid file size.`);
+  }
+  if (file.size > maximumBytes) {
+    throw new RangeError(`${label} exceeds the ${Math.floor(maximumBytes / (1024 * 1024))} MiB import limit.`);
+  }
+}
 
 function isPlainRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -243,9 +256,22 @@ export function validateExtractionWorkerMessage(value, { limits = ACTIVE_FORMAT_
   switch (value.type) {
     case "worker-started":
       return { type: value.type };
+    case "engine-loading":
+      if (value.stage !== "mupdf-load") throw new TypeError("Extraction worker reported an unsupported startup stage.");
+      return {
+        type: value.type,
+        stage: value.stage,
+        elapsedMs: finiteInteger(value.elapsedMs, "Worker startup elapsed time", 0, 120_000),
+      };
     case "engine-ready":
       if (value.engine !== "mupdf-wasm") throw new TypeError("Extraction worker reported an unsupported engine.");
-      return { type: value.type, engine: value.engine };
+      if (value.stage !== "mupdf-load") throw new TypeError("Extraction worker reported an unsupported startup stage.");
+      return {
+        type: value.type,
+        engine: value.engine,
+        stage: value.stage,
+        elapsedMs: finiteInteger(value.elapsedMs, "Worker startup elapsed time", 0, 120_000),
+      };
     case "page-start":
       return { type: value.type, page: finiteInteger(value.page, "Worker page", 1, limits.maxPageNumber) };
     case "ocr-progress":
@@ -271,10 +297,20 @@ export function validateExtractionWorkerMessage(value, { limits = ACTIVE_FORMAT_
         engine: value.engine === "mupdf-wasm" ? value.engine : "mupdf-wasm",
       };
     case "error":
-      return {
-        type: value.type,
-        message: boundedString(value.message || "Extraction worker failed.", "Worker error message", 2048),
-      };
+      {
+        const message = {
+          type: value.type,
+          message: boundedString(value.message || "Extraction worker failed.", "Worker error message", 2048),
+        };
+        if (value.stage !== undefined) {
+          if (value.stage !== "mupdf-load") throw new TypeError("Extraction worker reported an unsupported error stage.");
+          message.stage = value.stage;
+          message.elapsedMs = finiteInteger(value.elapsedMs, "Worker startup elapsed time", 0, 120_000);
+        } else if (value.elapsedMs !== undefined) {
+          throw new TypeError("Worker startup elapsed time requires a startup stage.");
+        }
+        return message;
+      }
     default:
       throw new TypeError(`Unsupported extraction worker message type: ${value.type}.`);
   }
