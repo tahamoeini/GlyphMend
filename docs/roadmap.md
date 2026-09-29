@@ -14,9 +14,9 @@ Run the browser extraction, storage, OCR, export, and production-build checks wi
 
 Maintain versioned Semantic Document IR v2 fixtures consumed by Rust and the browser. Reject invalid or oversized output before it reaches checkpoints or exports.
 
-### Complete signed distribution prerequisites
+### Publish unsigned portable prerelease packages
 
-Keep Windows code signing and macOS Developer ID signing/notarization as hard gates for public Companion publication. Every release package needs its executable, PDFium and Tesseract runtime files, English Fast and Best models, notices, checksums, SBOM, and provenance.
+Build six portable packages on GitHub-hosted Windows, macOS, and Linux runners without paid signing credentials. Mark packages and release notes as unsigned, include executables, PDFium and Tesseract runtime files, English Fast and Best models, notices, checksums, an SBOM, and provenance. Document expected Windows SmartScreen and macOS Gatekeeper warnings.
 
 ### Promote only measured releases
 

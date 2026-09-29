@@ -22,7 +22,7 @@ Build the static application with `npm run build`. See the [Browser guide](docs/
 
 The Companion is opt-in and processes the PDF locally. Download links and connection instructions are in the app's Companion area and on the [GitHub Releases page](https://github.com/tahamoeini/glyph-mend/releases). Start the downloaded program, connect using its loopback endpoint and one-time pairing code, then select Companion for an individual job. Browser remains the default.
 
-Companion extraction offers Fast OCR by default and High Accuracy OCR as an explicit option. Both English model sets are bundled in release packages. A release is published as a prerelease until benchmark results demonstrate repeatable improvements and browser-only behavior remains unchanged.
+Companion extraction offers Fast OCR by default and High Accuracy OCR as an explicit option. Both English model sets are bundled in portable release packages. The initial prerelease is unsigned and may trigger Windows SmartScreen or macOS Gatekeeper warnings; verify its published checksum before running. A release remains a prerelease until benchmark results demonstrate repeatable improvements and browser-only behavior remains unchanged.
 
 See [Companion architecture and API](docs/companion-engine.md) and [release requirements](docs/ci.md).
 

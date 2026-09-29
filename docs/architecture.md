@@ -48,6 +48,6 @@ The connection is user initiated and bound to an exact web origin and a one-use 
 
 - `web-app.yml`: browser tests, static build, and dependency checks.
 - `companion.yml`: Rust checks and browser-to-Companion contract checks.
-- `companion-release.yml`: manual, versioned, signed Companion packages, SBOM, checksums, attestations, and GitHub Release assets.
+- `companion-release.yml`: manual, versioned unsigned portable Companion packages, SBOM, checksums, attestations, and GitHub Release assets.
 
-The first Companion publication must be a prerelease. The release workflow blocks public assets when required platform signing credentials are unavailable or signing/notarization fails. Benchmark and licensing decisions remain visible in the [roadmap](roadmap.md).
+The first Companion publication is an explicitly unsigned prerelease. The workflow builds all six platform/architecture packages without paid signing credentials. Benchmark and licensing decisions remain visible in the [roadmap](roadmap.md).
