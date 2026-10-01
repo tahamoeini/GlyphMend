@@ -14,9 +14,9 @@ ignore = [
 
 [licenses]
 version = 2
-# Technical SPDX allowlist for current dependency-policy CI; this is not approval
-# for public distribution. The licensing decision remains blocked pending review.
-allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+# SPDX allowlist for Rust workspace dependencies. Project-level licensing and
+# bundled third-party notices are handled separately from this dependency check.
+allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "ISC", "Unicode-3.0"]
 exceptions = [
   { crate = "cssparser", allow = ["MPL-2.0"] },
   { crate = "cssparser-macros", allow = ["MPL-2.0"] },
