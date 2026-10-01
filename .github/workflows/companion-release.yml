@@ -65,8 +65,15 @@ jobs:
           - os: windows-2025
             target: x86_64-pc-windows-msvc
             platform: windows-x64
+            vcpkg_triplet: x64-windows
             pdfium_asset: pdfium-win-x64.tgz
             pdfium_sha256: 739a57d597d864297909cc40a2411eba728490c76a0fa25e3ea299c7f6b07020
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            platform: windows-arm64
+            vcpkg_triplet: arm64-windows
+            pdfium_asset: pdfium-win-arm64.tgz
+            pdfium_sha256: 5d04b6d0281e78613ef836dea2e0fefe6831f3ae92b3573e8fdf55330de67d3d
           - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos-x64
@@ -110,10 +117,14 @@ jobs:
       - name: Install Windows native libraries
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          VCPKG_TRIPLET: ${{ matrix.vcpkg_triplet }}
         run: |
-          vcpkg install tesseract:x64-windows
+          vcpkg install "tesseract:$env:VCPKG_TRIPLET"
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
           "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
+          "VCPKG_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
       - name: Build Companion
         run: cargo build --locked --release --target "${{ matrix.target }}" -p companion-cli
       - name: Assemble portable runtime and English OCR models
@@ -132,7 +143,7 @@ jobs:
           package="glyphmend-companion-${PLATFORM}"
           file_hash() { if [[ "$OS_NAME" == "macOS" ]]; then shasum -a 256 "$1" | cut -d' ' -f1; else sha256sum "$1" | cut -d' ' -f1; fi; }
           mkdir -p "$archive_dir" "$package/lib" "$package/tessdata/fast" "$package/tessdata/best"
-          if [[ "$OS_NAME" == "Windows" ]]; then binary=$(find "target/$TARGET/release" -maxdepth 1 -type f -iname 'companion-cli.exe' -print -quit); cp "$binary" "$package/glyphmend-companion.exe"; cp "$VCPKG_ROOT/installed/x64-windows/bin/"*.dll "$package/"; else binary=$(find "target/$TARGET/release" -maxdepth 1 -type f -name 'companion-cli' -print -quit); cp "$binary" "$package/glyphmend-companion"; fi
+          if [[ "$OS_NAME" == "Windows" ]]; then binary=$(find "target/$TARGET/release" -maxdepth 1 -type f -iname 'companion-cli.exe' -print -quit); cp "$binary" "$package/glyphmend-companion.exe"; cp "$VCPKG_ROOT/installed/$VCPKG_TRIPLET/bin/"*.dll "$package/"; else binary=$(find "target/$TARGET/release" -maxdepth 1 -type f -name 'companion-cli' -print -quit); cp "$binary" "$package/glyphmend-companion"; fi
           test -n "$binary"
           curl -fsSL "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8066/$PDFIUM_ASSET" -o /tmp/pdfium.tgz
           pdfium_archive_hash=$(file_hash /tmp/pdfium.tgz)
@@ -176,9 +187,9 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            powershell.exe -NoProfile -Command '$root="glyphmend-companion-windows-x64"; Get-ChildItem $root -Recurse -File | Where-Object {$_.Name -ne "SHA256SUMS"} | ForEach-Object { $hash=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(); $relative=$_.FullName.Substring((Resolve-Path $root).Path.Length+1); "{0}  {1}" -f $hash,$relative } | Set-Content "$root\SHA256SUMS" -Encoding ascii'
-            powershell.exe -NoProfile -Command 'Compress-Archive -Path ".\glyphmend-companion-windows-x64" -DestinationPath ".\release\glyphmend-companion-windows-x64-unsigned.zip"'
-            powershell.exe -NoProfile -Command 'Get-FileHash .\release\glyphmend-companion-windows-x64-unsigned.zip -Algorithm SHA256 | ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), $_.Path.Split([IO.Path]::DirectorySeparatorChar)[-1] } | Set-Content .\release\SHA256SUMS-windows-x64 -Encoding ascii'
+            powershell.exe -NoProfile -Command '$root=$env:PACKAGE; Get-ChildItem $root -Recurse -File | Where-Object {$_.Name -ne "SHA256SUMS"} | ForEach-Object { $hash=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(); $relative=$_.FullName.Substring((Resolve-Path $root).Path.Length+1); "{0}  {1}" -f $hash,$relative } | Set-Content (Join-Path $root "SHA256SUMS") -Encoding ascii'
+            powershell.exe -NoProfile -Command '$root=$env:PACKAGE; $archive=Join-Path "release" "$($env:PACKAGE)-unsigned.zip"; Compress-Archive -Path $root -DestinationPath $archive'
+            powershell.exe -NoProfile -Command '$archive=Join-Path "release" "$($env:PACKAGE)-unsigned.zip"; $hash=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLower(); "{0}  {1}" -f $hash,(Split-Path $archive -Leaf) | Set-Content (Join-Path "release" "SHA256SUMS-$($env:PLATFORM)") -Encoding ascii'
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
             (cd "$PACKAGE" && find . -type f ! -name SHA256SUMS -print0 | xargs -0 shasum -a 256 > SHA256SUMS)
             ditto -c -k --keepParent "$PACKAGE" "release/$PACKAGE-unsigned.zip"
@@ -223,6 +234,6 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          args=("$TAG" release/* --title "$TAG" --target "$SOURCE_SHA" --generate-notes)
+          args=("$TAG" release/* --title "$TAG (unsigned)" --notes "UNSIGNED PORTABLE PRERELEASE: These packages are not code-signed or notarized. Verify the published SHA-256 checksum before running. Windows SmartScreen or macOS Gatekeeper may warn or block launch; Linux builds require a compatible glibc. See each archive README for startup guidance." --target "$SOURCE_SHA" --generate-notes)
           if [[ "$PRERELEASE" == "true" ]]; then args+=(--prerelease); fi
           gh release create "${args[@]}"
