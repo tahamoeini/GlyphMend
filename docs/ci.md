@@ -25,7 +25,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Companion CI verifies the shared contract and browser client against the local API. OCR development builds require the Tesseract and Leptonica development libraries; release jobs install the platform toolchain and package the runtime libraries.
+Companion CI verifies the shared contract and browser client against the local API. The full PDF extraction check, which exercises both OCR models, is not run in CI or for each release package. OCR development builds require the Tesseract and Leptonica development libraries; release jobs install the platform toolchain and package the runtime libraries.
 
 ## Manual Companion release
 
