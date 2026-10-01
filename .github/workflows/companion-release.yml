@@ -156,7 +156,7 @@ jobs:
           if [[ "$OS_NAME" == "Linux" ]]; then
             for binary_to_inspect in "$package/glyphmend-companion" "$pdfium_file"; do ldd "$binary_to_inspect" | awk '/=> \/|^\// {for(i=1;i<=NF;i++) if($i ~ /^\//) print $i}' | while read -r lib; do case "$lib" in */libc.so*|*/libm.so*|*/libpthread.so*|*/libdl.so*|*/librt.so*|*/ld-linux*) continue;; esac; [[ -f "$lib" ]] && cp -L "$lib" "$package/lib/"; done; done
           elif [[ "$OS_NAME" == "macOS" ]]; then
-            { printf '%s\n' tesseract leptonica; brew deps --installed --recursive tesseract leptonica; } | sort -u | while read -r dep; do brew list --verbose "$dep"; done | grep -E '\.dylib$' | sort -u | while IFS= read -r lib; do [[ -f "$lib" ]] && cp -L "$lib" "$package/lib/"; done
+            { printf '%s\n' tesseract leptonica; brew deps --installed tesseract leptonica; } | sort -u | while read -r dep; do brew list --verbose "$dep"; done | grep -E '\.dylib$' | sort -u | while IFS= read -r lib; do [[ -f "$lib" ]] && cp -L "$lib" "$package/lib/"; done
           fi
           pdfium_hash=$(file_hash "$pdfium_file")
           for model in fast best; do
@@ -199,6 +199,8 @@ jobs:
             tar -czf "release/$PACKAGE-unsigned.tar.gz" "$PACKAGE"
             (cd release && sha256sum "$PACKAGE-unsigned.tar.gz" > "SHA256SUMS-$PLATFORM")
           fi
+      - name: Generate PDF corpus fixtures for the smoke test
+        run: node benchmarks/generate-corpus.mjs
       - name: Smoke test the unsigned portable runtime and both OCR models
         env:
           GLYPHMEND_COMPANION: ${{ steps.bundle.outputs.package }}/${{ runner.os == 'Windows' && 'run-companion.bat' || 'run-companion.sh' }}
