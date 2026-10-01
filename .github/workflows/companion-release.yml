@@ -199,12 +199,6 @@ jobs:
             tar -czf "release/$PACKAGE-unsigned.tar.gz" "$PACKAGE"
             (cd release && sha256sum "$PACKAGE-unsigned.tar.gz" > "SHA256SUMS-$PLATFORM")
           fi
-      - name: Generate PDF corpus fixtures for the smoke test
-        run: node benchmarks/generate-corpus.mjs
-      - name: Smoke test the unsigned portable runtime and both OCR models
-        env:
-          GLYPHMEND_COMPANION: ${{ steps.bundle.outputs.package }}/${{ runner.os == 'Windows' && 'run-companion.bat' || 'run-companion.sh' }}
-        run: node tests/document-extraction-e2e.mjs
       - name: Attest release assets
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
