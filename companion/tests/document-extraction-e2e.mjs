@@ -5,13 +5,13 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { LoopbackCompanionBridge } from '../../web-app/src/features/companion/bridge.js';
 
-const executable = process.env.GLYPHMEND_COMPANION
-  ? path.resolve(process.env.GLYPHMEND_COMPANION)
-  : process.platform === 'win32' ? 'target/debug/companion-cli.exe' : 'target/debug/companion-cli';
+const executable = path.resolve(process.env.GLYPHMEND_COMPANION
+  ?? (process.platform === 'win32' ? 'target/debug/companion-cli.exe' : 'target/debug/companion-cli'));
+const usesWindowsCommandScript = process.platform === 'win32' && /\.(?:bat|cmd)$/i.test(executable);
 const webOrigin = 'http://127.0.0.1:5173';
 const child = spawn(executable, ['--no-open', '--web-origin', webOrigin], {
   stdio: ['ignore', 'pipe', 'inherit'],
-  shell: process.platform === 'win32',
+  shell: usesWindowsCommandScript,
 });
 let output = '';
 child.stdout.setEncoding('utf8');
