@@ -3,7 +3,7 @@ name: GlyphMend Companion
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    paths: ["companion/**", "docs/**", "README.md", ".github/workflows/companion.yml"]
+    paths: ["companion/**", "docs/**", "README.md", ".github/workflows/companion.yml", ".github/workflows/companion-release.yml"]
   workflow_dispatch:
 permissions:
   contents: read
