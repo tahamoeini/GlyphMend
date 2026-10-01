@@ -232,4 +232,4 @@ jobs:
           set -euo pipefail
           args=("$TAG" release/* --title "$TAG (unsigned)" --notes "UNSIGNED PORTABLE PRERELEASE: These packages are not code-signed or notarized. Verify the published SHA-256 checksum before running. Windows SmartScreen or macOS Gatekeeper may warn or block launch; Linux builds require a compatible glibc. See each archive README for startup guidance." --target "$SOURCE_SHA" --generate-notes)
           if [[ "$PRERELEASE" == "true" ]]; then args+=(--prerelease); fi
-          gh release create "${args[@]}"
+          gh release create --repo "$GITHUB_REPOSITORY" "${args[@]}"
