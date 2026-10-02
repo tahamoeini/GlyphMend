@@ -1,10 +1,14 @@
 <p align="center">
-  <img src="web-app/public/brand/glyphmend-mark.svg" alt="GlyphMend logo" width="80" height="80">
+  <img src="web-app/public/brand/glyphmend-mark.svg" alt="GlyphMend logo" width="72" height="72">
 </p>
 
 <h1 align="center">GlyphMend</h1>
 
 <p align="center"><strong>Faithful document reconstruction from PDF to structured Markdown.</strong></p>
+
+<p align="center">GlyphMend is a local-first PDF reconstruction product. The browser platform is the complete default: it extracts documents on the user's device, stores resumable checkpoints locally, and exports Markdown and DOCX without a backend.</p>
+
+<p align="center"><a href="https://glyphmend.negar.team/" target="_blank" rel="noopener noreferrer">Open the platform</a></p>
 
 <p align="center">
   <a href="https://www.producthunt.com/products/glyphmend?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-glyphmend" target="_blank" rel="noopener noreferrer">
@@ -14,8 +18,6 @@
     </picture>
   </a>
 </p>
-
-GlyphMend is a local-first PDF reconstruction product. The browser platform is the complete default: it extracts documents on the user's device, stores resumable checkpoints locally, and exports Markdown and DOCX without a backend.
 
 An optional Rust Companion can be downloaded and started by the user, then selected for an individual extraction job. It uses PDFium for PDF text, geometry, page objects, and rendering, and Tesseract OCR for English, Russian, Persian, or Simplified Chinese. Both engines exchange the versioned Semantic Document IR v2 and use the same Markdown and DOCX export paths. Browser extraction remains available when the Companion is absent, denied, unsupported, or fails.
 
