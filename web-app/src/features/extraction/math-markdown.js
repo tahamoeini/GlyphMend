@@ -1,7 +1,7 @@
 const LATEX_SYMBOLS = new Map([
   ["≤", "\\leq"], ["≥", "\\geq"], ["≠", "\\neq"], ["≈", "\\approx"],
   ["∞", "\\infty"], ["∑", "\\sum"], ["∏", "\\prod"], ["∫", "\\int"],
-  ["√", "\\sqrt"], ["×", "\\times"], ["÷", "\\div"], ["μ", "\\mu"],
+  ["×", "\\times"], ["÷", "\\div"], ["μ", "\\mu"],
   ["σ", "\\sigma"], ["λ", "\\lambda"], ["α", "\\alpha"], ["β", "\\beta"],
   ["γ", "\\gamma"], ["δ", "\\delta"], ["θ", "\\theta"], ["π", "\\pi"],
   ["ρ", "\\rho"], ["τ", "\\tau"], ["φ", "\\phi"],
@@ -57,9 +57,55 @@ function normalize(value) {
 }
 
 export function latexMarkdown(value) {
-  let text = normalize(value).replace(ESCAPED_PUNCTUATION, "$1");
+  let text = squareRootLatex(normalize(value).replace(ESCAPED_PUNCTUATION, "$1"));
   for (const [symbol, latex] of LATEX_SYMBOLS) text = text.split(symbol).join(latex);
   return text.replace(/½/g, "\\frac{1}{2}");
+}
+
+export function squareRootLatex(value) {
+  const chars = [...String(value ?? "")];
+  let result = "";
+  for (let index = 0; index < chars.length; index += 1) {
+    if (chars[index] !== "√") {
+      result += chars[index];
+      continue;
+    }
+
+    let start = index + 1;
+    while (/\s/u.test(chars[start] || "")) start += 1;
+    if (start >= chars.length) {
+      result += "√";
+      continue;
+    }
+
+    const open = chars[start];
+    const close = { "(": ")", "[": "]", "{": "}" }[open];
+    if (close) {
+      let depth = 0;
+      let end = start;
+      for (; end < chars.length; end += 1) {
+        if (chars[end] === open) depth += 1;
+        else if (chars[end] === close && --depth === 0) break;
+      }
+      if (end < chars.length) {
+        result += `\\sqrt{${chars.slice(start + 1, end).join("")}}`;
+        index = end;
+        continue;
+      }
+      result += "√";
+      continue;
+    }
+
+    let end = start;
+    while (end < chars.length && !/[\s=<>≤≥≠≈+−\-*×÷/,;]/u.test(chars[end])) end += 1;
+    if (end === start) {
+      result += "√";
+      continue;
+    }
+    result += `\\sqrt{${chars.slice(start, end).join("")}}`;
+    index = end - 1;
+  }
+  return result;
 }
 
 /** Return conservative inline candidates without changing the surrounding prose. */

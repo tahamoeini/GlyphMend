@@ -1,5 +1,5 @@
 // Versioned browser-side constants and validators for the Companion REST API.
-export const COMPANION_PROTOCOL = Object.freeze({ major: 1, minor: 3 });
+export const COMPANION_PROTOCOL = Object.freeze({ major: 1, minor: 4 });
 export const COMPANION_IR_SCHEMA = Object.freeze({ id: "glyphmend.semantic-document-ir", version: 2 });
 export const COMPANION_RESULT_SCHEMA = "glyphmend.provider-result.v1";
 export const REGION_INPUT_SCHEMA = "glyphmend.region-input.v1";
@@ -178,13 +178,14 @@ export function validateJobCreate(request) {
   if (request.inputKind === "region") validateRegionMetadata(request.metadata);
   if (request.capabilityId === DOCUMENT_EXTRACTION_CAPABILITY) {
     const value = request.metadata;
-    const fields = new Set(["schema", "selectedPages", "ocrAccuracy", "useOcr", "forceOcr", "password"]);
+    const fields = new Set(["schema", "selectedPages", "ocrAccuracy", "ocrLanguage", "useOcr", "forceOcr", "password"]);
     if (request.inputKind !== "document" || !hasOnlyKeys(value, fields)
       || value.schema !== DOCUMENT_OPTIONS_SCHEMA
       || !Array.isArray(value.selectedPages) || value.selectedPages.length < 1 || value.selectedPages.length > 2000
       || value.selectedPages.some((page) => !Number.isInteger(page) || page < 1 || page > request.pageCount)
       || new Set(value.selectedPages).size !== value.selectedPages.length
       || !["fast", "high-accuracy"].includes(value.ocrAccuracy)
+      || (value.ocrLanguage !== undefined && !["eng", "rus", "fas", "chi_sim"].includes(value.ocrLanguage))
       || (value.useOcr !== undefined && typeof value.useOcr !== "boolean")
       || (value.forceOcr !== undefined && typeof value.forceOcr !== "boolean")
       || (value.password !== undefined && (typeof value.password !== "string" || utf8Length(value.password) > 4096))) {

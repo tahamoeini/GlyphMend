@@ -3732,3 +3732,79 @@
 }
 
 }
+
+@layer stitch-shell {
+  .workspace > :is(.workspace-rail, .sidebar, .editor, .exports),
+  .exports .inspector-section,
+  .exports .inspector-section > * { min-width: 0; }
+
+  .exports .inspector-section { padding: clamp(12px, 1.1vw, 16px); }
+  .results-heading { gap: 10px; }
+  .results-heading > div { min-width: 0; }
+  .results-heading h2, .results-heading .eyebrow { overflow-wrap: anywhere; }
+  .results-heading .status-badge {
+    min-width: 0; max-width: 44%; flex: 0 1 auto; white-space: normal; overflow-wrap: anywhere;
+  }
+
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .metric-card { min-width: 0; padding: 10px; }
+  .metric-card dt {
+    max-width: 100%; display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
+    text-overflow: clip; white-space: normal;
+  }
+  .metric-card dd { max-width: 100%; line-height: 1.2; overflow-wrap: anywhere; }
+  .metric-card.metric-status { min-height: 52px; flex-wrap: wrap; gap: 8px; }
+
+  .control-row.compact > span:first-child, .field-label,
+  .field-label :is(input, select, textarea), .field-grid > * { min-width: 0; }
+  .control-row.compact > span:first-child { flex: 1 1 auto; }
+  .control-row strong, .control-row small, .field-label small, .technical-note { overflow-wrap: anywhere; }
+  .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+
+  .prose :is(p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th) {
+    unicode-bidi: plaintext; text-align: start;
+  }
+
+  :root[data-theme="dark"] {
+    --surface-content-background: #1a2027;
+    --surface-content-elevated: #242b34;
+    --surface-content-inset: #141a21;
+    --border-subtle: rgba(228, 235, 244, 0.14);
+    --border-strong: rgba(228, 235, 244, 0.22);
+    --border-emphasis: rgba(228, 235, 244, 0.32);
+    --text-primary: #f2f5f8;
+    --text-secondary: #c5ced9;
+    --text-tertiary: #a3afbe;
+    --text-quaternary: #8996a5;
+    --glass-regular-fill: rgba(25, 31, 39, 0.9);
+    --glass-clear-fill: rgba(25, 31, 39, 0.78);
+    --glass-edge: rgba(235, 241, 248, 0.16);
+    --glass-highlight: rgba(255, 255, 255, 0.06);
+    --glass-shadow: 0 10px 26px rgba(0, 0, 0, 0.24), 0 1px 3px rgba(0, 0, 0, 0.18);
+    --glass-blur: 16px;
+    --glass-selected-overlay-fill: #2a323d;
+    --glass-selected-overlay-edge: rgba(151, 196, 245, 0.24);
+    --glass-selected-overlay-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --shadow-content: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.14);
+    --shadow-elevated: 0 14px 32px rgba(0, 0, 0, 0.26), 0 2px 6px rgba(0, 0, 0, 0.18);
+    --shadow-floating: 0 16px 34px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2);
+    --shadow-contact: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  :root[data-theme="dark"] :is(
+    .content-panel, .drop-zone, .progress-card, .metric-card, .downloads > button,
+    .search, .field-label input, .field-label select, .page-controls input,
+    .segmented-control, .status-badge, .technical-note, .quiet, .file-button,
+    .topbar-button, .icon-button, .text-button, .tab, .switch i
+  ) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035); }
+
+  :root[data-theme="dark"] .sidebar-backdrop,
+  :root[data-theme="dark"] .inspector-backdrop { background: rgb(0 0 0 / 0.48); }
+
+  @media (max-width: 699px) {
+    .field-grid { grid-template-columns: minmax(0, 1fr); }
+    .exports .inspector-section { padding: 12px; }
+    .metric-card { padding: 9px; }
+  }
+}

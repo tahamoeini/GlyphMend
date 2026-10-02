@@ -4,6 +4,8 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
+const OCR_LANGUAGES = ["eng", "rus", "fas", "chi_sim"];
+
 export default defineConfig({
   base: "./",
   worker: { format: "es" },
@@ -40,18 +42,16 @@ export default defineConfig({
           src: "node_modules/tesseract.js/dist/worker.min.js",
           dest: "tesseract",
         },
-        {
-          // Serve the local model uncompressed. Chromium can turn a streamed
-          // `.gz` static-copy response into an empty 204 during development,
-          // which makes Tesseract write a zero-byte traineddata file.
-          src: "node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz",
+        ...OCR_LANGUAGES.map((language) => ({
+          // Serve local models uncompressed so the same file works in dev and offline builds.
+          src: `node_modules/@tesseract.js-data/${language}/4.0.0_best_int/${language}.traineddata.gz`,
           dest: "tessdata",
-          rename: "eng.traineddata",
+          rename: `${language}.traineddata`,
           transform: {
             encoding: "buffer",
             handler: (content) => gunzipSync(content),
           },
-        },
+        })),
       ],
     }),
     VitePWA({

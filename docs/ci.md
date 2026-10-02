@@ -29,7 +29,7 @@ Companion CI verifies the shared contract and browser client against the local A
 
 ## Manual Companion release
 
-Run `Companion Release` from GitHub Actions on the default branch and provide a SemVer version such as `0.1.0-beta.1`. The workflow builds six unsigned portable packages: Windows x64, macOS x64/arm64, and Linux x64/arm64. Each archive includes the executable, PDFium/Tesseract runtime files, both English OCR models, third-party notices, a runtime manifest, and internal checksums. The workflow also uploads release archives and checksum files as GitHub Actions artifacts, creates an SPDX SBOM, produces provenance attestations, and publishes GitHub Release assets.
+Run `Companion Release` from GitHub Actions on the default branch and provide a SemVer version such as `0.1.0-beta.1`. The workflow builds six unsigned portable packages: Windows x64, macOS x64/arm64, and Linux x64/arm64. Each archive includes the executable, PDFium/Tesseract runtime files, Fast and Best OCR models for English, Russian, Persian, and Simplified Chinese, third-party notices, a runtime manifest, and internal checksums. The workflow also uploads release archives and checksum files as GitHub Actions artifacts, creates an SPDX SBOM, produces provenance attestations, and publishes GitHub Release assets.
 
 All packages are explicitly unsigned; signing certificates, Apple notarization, and signing secrets are not required. Windows SmartScreen or macOS Gatekeeper may warn or block launch. The release page and each archive disclose this and provide checksums for verification. Versions containing a prerelease identifier are published as prereleases. Stable promotion remains gated on repeatable benchmark improvements and a browser regression review.
 

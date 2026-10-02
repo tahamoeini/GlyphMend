@@ -7,12 +7,13 @@ import { analyzePageLayout, layoutEntries } from "./layout-layer.js";
 import {
   inlineEquationCandidates,
   inlineMathMarkdown,
+  squareRootLatex,
   splitEquationProse,
 } from "./math-markdown.js";
 import { validateEquationCandidate } from "../recognition/math-validation.js";
-import { equationFromLatex, equationToMarkdown } from "../../shared/equation-ir.js";
 import { documentIRToMarkdown, pageDocumentIR } from "./document-ir.js";
 import { semanticDocumentFromLegacyDocumentIR } from "../../shared/semantic-document-ir.js";
+import { equationFromLatex, equationToMarkdown } from "../../shared/equation-ir.js";
 import {
   tableIRFromRows,
   tableIRToMarkdown,
@@ -25,10 +26,12 @@ import { classifyVisualEvidence, createVisualIR } from "../../shared/visual-ir.j
 
 const FORMULA_CUE =
   /(?:equation|formula|expression|defined by|given by|satisfies|we have|becomes|therefore|hence|where|as follows|satisfying|express(?:ed)?|condition(?: reduces)? to|is the (?:largest|smallest)|at (?:a )?price|is given by|reduces to|is equal to)\s*:?\s*$/i;
+const HIGH_EXTRACTION_CONFIDENCE = 0.85;
 const DISPLAY_MATH = String.fromCharCode(36).repeat(2);
 const MAX_RASTER_PIXELS = 40_000_000;
 const MAX_RASTER_BYTES = 32 * 1024 * 1024;
 let ocrWorker;
+let ocrWorkerLanguage;
 let mupdf;
 let ocrProgressPage;
 
@@ -41,7 +44,6 @@ const LATEX_SYMBOLS = new Map([
   ["∑", "\\sum"],
   ["∏", "\\prod"],
   ["∫", "\\int"],
-  ["√", "\\sqrt"],
   ["×", "\\times"],
   ["÷", "\\div"],
   ["μ", "\\mu"],
@@ -775,6 +777,7 @@ function mathScore(text) {
 
 export function latexMarkdown(value) {
   let text = normalizeTextLine(value);
+  text = squareRootLatex(text);
   for (const [symbol, latex] of LATEX_SYMBOLS) text = text.split(symbol).join(latex);
   text = text.replace(/½/g, "\\frac{1}{2}");
   return text;
@@ -1164,19 +1167,28 @@ function validateEquationReconstruction(
   sourceType = "raster",
   metadata = {},
 ) {
+  const { recognitionConfidence, ...candidateMetadata } = metadata;
   const provider = sourceType === "raster" ? "tesseract-ocr" : "mupdf-structured-text";
   const candidate = buildEquationCandidate(
     pageNumber,
-    { kind: "equation", bbox, y: bbox[1], text, ...metadata },
+    { kind: "equation", bbox, y: bbox[1], text, ...candidateMetadata },
     crop,
     sourceType,
     text,
   );
+  if (Number.isFinite(recognitionConfidence)) {
+    candidate.recognitionConfidence = recognitionConfidence;
+    candidate.confidence = {
+      ...candidate.confidence,
+      overall: Math.min(candidate.confidence.overall, recognitionConfidence),
+    };
+  }
   const validation = validateEquationCandidate(
     {
       latex: text,
       normalized: text,
       confidence: candidate.confidence,
+      recognitionConfidence: candidate.recognitionConfidence,
       provider,
       version: "browser-local",
     },
@@ -1188,28 +1200,77 @@ function validateEquationReconstruction(
   candidate.equationIR = validation.output.equationIR;
   candidate.disposition = validation.disposition;
 
+  const sourceCropAvailable = Boolean(crop?.data?.byteLength);
+  const omitSourceCrop = validation.accepted
+    && sourceCropAvailable
+    && Number.isFinite(recognitionConfidence)
+    && recognitionConfidence >= HIGH_EXTRACTION_CONFIDENCE
+    && candidate.confidence.overall >= HIGH_EXTRACTION_CONFIDENCE
+    && validation.validation.parseSuccess
+    && validation.validation.renderSuccess
+    && validation.validation.semanticEquivalent;
+  const removeCropProvenance = omitSourceCrop || !sourceCropAvailable;
+  if (removeCropProvenance && validation.output.equationIR) {
+    const acceptedEquation = validation.output.equationIR;
+    const withoutCrop = equationFromLatex({
+      ...acceptedEquation,
+      disposition: omitSourceCrop
+        ? "reconstructed"
+        : validation.accepted
+          ? "reconstructed"
+          : validation.validation.parseSuccess
+            ? "needs-review"
+            : "preserved-source",
+      diagnostics: [
+        ...acceptedEquation.diagnostics,
+        omitSourceCrop
+          ? "source-crop-omitted-high-confidence"
+          : "source-crop-unavailable",
+      ],
+      source: {
+        ...acceptedEquation.source,
+        cropIds: [],
+        cropAvailable: false,
+      },
+    });
+    validation.output.equationIR = withoutCrop;
+    candidate.equationIR = withoutCrop;
+  }
+  candidate.sourceCropOmitted = omitSourceCrop;
+  if (removeCropProvenance) {
+    candidate.sourceAsset = {
+      id: candidate.sourceAsset.id,
+      page: candidate.sourceAsset.page,
+      kind: candidate.sourceAsset.kind,
+      bbox: candidate.sourceAsset.bbox,
+      sourceType: candidate.sourceAsset.sourceType,
+      provenance: candidate.sourceAsset.provenance,
+    };
+    validation.manifest.sourceAsset = { ...candidate.sourceAsset };
+  }
+
   const sourceEvidenceAsset = crop.data?.byteLength
     ? {
         id: candidate.sourceAsset.id,
         page: pageNumber,
         kind: "equation",
         bbox,
-        sourceType: "raster",
+        sourceType,
         caption: "Equation preserved for review",
         ...crop,
       }
     : null;
-  const fallbackAsset = !validation.accepted ? sourceEvidenceAsset : null;
+  const fallbackAsset = omitSourceCrop ? null : sourceEvidenceAsset;
+  const marker = fallbackAsset ? sourceMarker(pageNumber, fallbackAsset) : "";
   return {
     candidate,
     validation,
     sourceEvidenceAsset,
     fallbackAsset,
-    fallbackMarker: fallbackAsset
-      ? sourceMarker(pageNumber, fallbackAsset)
-      : validation.accepted
-        ? ""
-        : escapeMd(text, { protectBlockStart: false }),
+    sourceMarker: marker,
+    fallbackMarker: validation.accepted
+      ? ""
+      : marker || escapeMd(text, { protectBlockStart: false }),
     provider,
   };
 }
@@ -1219,7 +1280,9 @@ function equationReviewItem(candidate, validation, provider) {
     id: candidate.sourceAsset?.id || candidate.id || "equation-unknown",
     page: candidate.page,
     kind: "equation",
-    sourceAsset: candidate.sourceAsset,
+    sourceAsset: candidate.sourceCropOmitted
+      ? undefined
+      : candidate.sourceAsset,
     candidate: {
       id: candidate.id,
       kind: "equation",
@@ -1303,6 +1366,35 @@ function sourceMarker(pageNumber, asset) {
     ? ` caption="${asset.caption.replace(/["\\]/g, " ").replace(/\s+/g, " ").trim()}"`
     : "";
   return `[SOURCE_VISUAL page=${pageNumber} id="${asset.id}" kind="${asset.kind}" bbox="${box}"${caption}]`;
+}
+
+function overlapsRegion(left, right, minimumCoverage = 0.72) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== 4 || right.length !== 4)
+    return false;
+  const width = Math.max(0, Math.min(left[2], right[2]) - Math.max(left[0], right[0]));
+  const height = Math.max(0, Math.min(left[3], right[3]) - Math.max(left[1], right[1]));
+  const regionArea = Math.max(1, (right[2] - right[0]) * (right[3] - right[1]));
+  const extractionArea = Math.max(1, (left[2] - left[0]) * (left[3] - left[1]));
+  const sizeSimilarity = Math.min(regionArea, extractionArea) / Math.max(regionArea, extractionArea);
+  return (width * height) / regionArea >= minimumCoverage && sizeSimilarity >= 0.62;
+}
+
+function hasConfidentExtractionForRegion(entries, bbox) {
+  return entries.some((entry) => {
+    const confidence = Number(entry.confidence?.overall ?? entry.confidence?.extraction ?? entry.confidence);
+    const inlineEquationConfidence = Array.isArray(entry.inlineEquationIRs)
+      && entry.inlineEquationIRs.length
+      ? Math.min(...entry.inlineEquationIRs.map((equation) =>
+          Number(equation.confidence?.reconstruction ?? equation.confidence?.overall ?? 0)))
+      : Number.POSITIVE_INFINITY;
+    const extractionConfidence = Math.min(confidence, inlineEquationConfidence);
+    const contentBlock = ["equation", "table"].includes(entry.kind)
+      || (entry.kind === "text" && ["tesseract-ocr", "mupdf-structured-text"].includes(entry.extractionMethod));
+    return contentBlock
+      && Number.isFinite(extractionConfidence)
+      && extractionConfidence >= HIGH_EXTRACTION_CONFIDENCE
+      && overlapsRegion(entry.bbox, bbox);
+  });
 }
 
 function visualBboxIntersects(left, right) {
@@ -1959,7 +2051,10 @@ function ocrVisualCandidates(data, lines, pageBounds) {
       y1: Math.max(...group.map((item) => item.y1)),
       x0: Math.min(...group.map((item) => item.x0)),
       x1: Math.max(...group.map((item) => item.x1)),
-      latex: latexMarkdown(group.map((item) => item.text).join(" ")),
+      confidence: group
+        .map((item) => item.confidence)
+        .filter((value) => Number.isFinite(value) && value >= 0)
+        .reduce((sum, value, _, values) => sum + value / values.length / 100, 0),
     })),
   };
 }
@@ -1983,8 +2078,14 @@ export function ocrProgressMessage(pageNumber, event = {}) {
 }
 
 async function ensureOcrWorker(options, paths) {
+  const language = options.ocrLanguage || "eng";
+  if (ocrWorker && ocrWorkerLanguage !== language) {
+    await ocrWorker.terminate();
+    ocrWorker = undefined;
+    ocrWorkerLanguage = undefined;
+  }
   if (!ocrWorker) {
-    ocrWorker = await createOcrWorker(options.ocrLanguage || "eng", 1, {
+    ocrWorker = await createOcrWorker(language, 1, {
       workerPath: paths.workerPath,
       corePath: paths.corePath,
       langPath: paths.langPath,
@@ -1997,6 +2098,7 @@ async function ensureOcrWorker(options, paths) {
         if (message) self.postMessage(message);
       },
     });
+    ocrWorkerLanguage = language;
   }
   return ocrWorker;
 }
@@ -2145,8 +2247,9 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
   let ocrCandidates = [];
   const reviewItems = [];
   const embeddedTextCorrupt = embeddedTextNeedsOcr(blocks);
-  const preserveSourcePage =
+  let preserveSourcePage =
     embeddedTextCorrupt && options.preserveVisuals !== false;
+  let ocrTextConfidence = null;
   let sourcePageFallbackFailed = false;
 
   const pageTable =
@@ -2217,7 +2320,15 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
       ocrPaths,
       pageNumber,
     );
-    const lines = ocrLines(ocrData);
+    const lines = ocrLines(ocrData, options.ocrLanguage);
+    const confidenceLines = lines
+      .map((line) => line.confidence)
+      .filter((value) => Number.isFinite(value) && value >= 0);
+    ocrTextConfidence = confidenceLines.length
+      ? confidenceLines.reduce((sum, value) => sum + value, 0) / confidenceLines.length / 100
+      : null;
+    if (preserveSourcePage && ocrTextConfidence >= HIGH_EXTRACTION_CONFIDENCE)
+      preserveSourcePage = false;
     const detectedVisuals = ocrVisualCandidates(ocrData, lines, pageBounds);
     const detected =
       options.preserveVisuals === false
@@ -2231,7 +2342,6 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
         : detectedVisuals;
     ocrCandidates = detected.candidates;
     ocrApplied = true;
-
     const rawHeight = Math.max(
       1,
       Number(ocrData._rasterHeight) ||
@@ -2244,34 +2354,39 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
       : [];
     const validatedEquationRanges = [];
     for (const group of equationGroups) {
-      const pageEquationText = group.latex || group.text || "";
       const pageBBox = [
         left + pageWidth * 0.065,
         geometryYFromRaw(group.y0, pageBounds, rawHeight),
         right - pageWidth * 0.065,
         geometryYFromRaw(group.y1, pageBounds, rawHeight),
       ];
+      const equationText = latexMarkdown(group.text || "");
       let crop = { data: new Uint8Array(), width: 0, height: 0 };
       try {
         crop = cropPage(page, pageBBox, 2.6);
       } catch {
-        /* the textual candidate remains reviewable if its crop is unavailable */
+        /* The equation can still be reconstructed from the OCR text. */
       }
       const reconstruction = validateEquationReconstruction(
         pageNumber,
         pageBBox,
-        pageEquationText,
+        equationText,
         crop,
         "raster",
+        { recognitionConfidence: group.confidence },
       );
-      const { candidate, validation, fallbackAsset, sourceEvidenceAsset } = reconstruction;
+      const { candidate, validation, fallbackAsset } = reconstruction;
       if (fallbackAsset) assets.push(fallbackAsset);
-      else if (sourceEvidenceAsset) assets.push(sourceEvidenceAsset);
       validatedEquationRanges.push({
         ...group,
-        latex: validation.output.latex || pageEquationText,
+        latex: validation.output.latex || equationText,
+        markdown: equationToMarkdown(validation.output.equationIR)
+          || (DISPLAY_MATH + "\n" + (validation.output.latex || equationText) + "\n" + DISPLAY_MATH),
+        accepted: validation.accepted,
+        sourceMarker: reconstruction.sourceMarker,
         fallbackMarker: reconstruction.fallbackMarker,
         equationIR: validation.output.equationIR,
+        confidence: group.confidence ?? candidate.confidence?.overall ?? null,
       });
       ocrCandidates.push(candidate);
       reviewItems.push(equationReviewItem(candidate, validation, "tesseract-ocr"));
@@ -2280,6 +2395,7 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
       ...ocrMarkdownEntries(ocrData, escapeMd, {
         pageBounds,
         rawHeight: ocrData._rasterHeight,
+        language: options.ocrLanguage,
         excludeRanges: detected.excludeRanges,
         equationRanges: validatedEquationRanges,
       }).map((entry) => ({
@@ -2306,15 +2422,17 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
         Math.max(2, bodySize * 0.35),
       );
       const rendered = cropPage(page, bbox, 2.8);
-      const ocrData = await recognizeRaster(
-        rendered,
-        options,
-        ocrPaths,
-        pageNumber,
-      );
-      const recognizedText = joinWrapped(ocrLines(ocrData));
+      const ocrData = await recognizeRaster(rendered, options, ocrPaths, pageNumber);
+      const recognizedLines = ocrLines(ocrData, options.ocrLanguage);
+      const recognizedText = joinWrapped(recognizedLines);
       if (!looksLikeOcrEquation(recognizedText)) continue;
       const equationText = latexMarkdown(recognizedText);
+      const confidenceValues = recognizedLines
+        .map((line) => line.confidence)
+        .filter((value) => Number.isFinite(value) && value >= 0);
+      const recognitionConfidence = confidenceValues.length
+        ? confidenceValues.reduce((sum, value) => sum + value / confidenceValues.length / 100, 0)
+        : undefined;
       const reconstruction = validateEquationReconstruction(
         pageNumber,
         bbox,
@@ -2323,54 +2441,51 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
         "raster",
         {
           mode: "display",
+          recognitionConfidence,
           sourceObjectIds: [`p${pageNumber}-image-${candidate.sourceImageIndex}`],
           sourceRegionIds: [`p${pageNumber}-equation-image-${candidate.sourceImageIndex}`],
         },
       );
-      if (reconstruction.fallbackAsset) assets.push(reconstruction.fallbackAsset);
-      else if (reconstruction.sourceEvidenceAsset) assets.push(reconstruction.sourceEvidenceAsset);
-      if (reconstruction.validation.accepted) {
-        entries.push({
-          y: candidate.y,
-          x: candidate.bbox[0],
-          bbox: candidate.bbox,
-          markdown: equationToMarkdown(reconstruction.validation.output.equationIR) ||
-            (DISPLAY_MATH + "\n" + reconstruction.validation.output.latex + "\n" + DISPLAY_MATH),
-          kind: "equation",
-          equationIR: reconstruction.validation.output.equationIR,
-          mode: reconstruction.validation.output.equationIR?.mode || "display",
-          extractionMethod: "tesseract-equation-image",
-        });
-      } else {
-        entries.push({
-          y: candidate.y,
-          x: candidate.bbox[0],
-          bbox: candidate.bbox,
-          markdown: reconstruction.fallbackMarker,
-          kind: "equation-fallback",
-          equationIR: reconstruction.validation.output.equationIR,
-          mode: reconstruction.validation.output.equationIR?.mode || "display",
-          extractionMethod: "source-preservation",
-        });
-      }
+      const { validation, fallbackAsset } = reconstruction;
+      if (fallbackAsset) assets.push(fallbackAsset);
+      const accepted = validation.accepted;
+      const equationMarkdown = equationToMarkdown(validation.output.equationIR)
+        || (DISPLAY_MATH + "\n" + validation.output.latex + "\n" + DISPLAY_MATH);
+      entries.push({
+        y: candidate.y,
+        x: candidate.bbox[0],
+        bbox: candidate.bbox,
+        markdown: accepted
+          ? [equationMarkdown, reconstruction.sourceMarker].filter(Boolean).join("\n\n")
+          : [equationMarkdown, reconstruction.sourceMarker || reconstruction.fallbackMarker]
+            .filter(Boolean)
+            .join("\n\n"),
+        kind: accepted ? "equation" : "equation-fallback",
+        equationIR: validation.output.equationIR,
+        mode: validation.output.equationIR?.mode || "display",
+        confidence: reconstruction.candidate.confidence?.overall,
+        extractionMethod: accepted ? "tesseract-equation-image" : "source-preservation",
+      });
       reviewItems.push(
-        equationReviewItem(
-          reconstruction.candidate,
-          reconstruction.validation,
-          "tesseract-equation-image",
-        ),
+        equationReviewItem(reconstruction.candidate, validation, "tesseract-equation-image"),
       );
       recoveredEquationImageIndexes.add(candidate.sourceImageIndex);
     } catch {
-      /* Preserve the image through the normal visual path if focused OCR fails. */
+      /* Preserve the source image through the normal visual path if focused OCR fails. */
     }
   }
 
   for (const block of (ocrApplied ? [] : layoutAnalysis.orderedBlocks)) {
     const remainingLines = block.lines.filter((line) => !pageTableLines.has(line));
     if (!remainingLines.length) continue;
-    const text = joinWrapped(remainingLines);
-    if (!text) continue;
+    const sourceText = joinWrapped(remainingLines);
+    if (!sourceText) continue;
+    const blockEquation = options.extractEquations
+      && isEquation(sourceText, block, pageBounds, bodySize);
+    const text = sourceText;
+    const markdownText = options.extractEquations
+      ? inlineMathMarkdown(sourceText)
+      : sourceText;
     const topEdge = block.bbox[1] <= pageBounds[1] + pageHeight * 0.12;
     const bottomEdge = block.bbox[3] >= pageBounds[3] - pageHeight * 0.12;
     if (topEdge) edges.headers.push(text);
@@ -2401,14 +2516,14 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
       markdown = tableIRToMarkdown(table.tableIR);
       entryKind = "table";
     }
-    else if (options.extractEquations && isEquation(text, block, pageBounds, bodySize)) {
+    else if (blockEquation) {
       const equationParts = splitEquationProse(text);
       const equationText = latexMarkdown(equationParts?.equation || text);
       let crop = { data: new Uint8Array(), width: 0, height: 0 };
       try {
         crop = cropPage(page, block.bbox, 2.6);
       } catch {
-        /* the equation can still be preserved as text if rasterization fails */
+        /* The formula can still be reconstructed from embedded PDF text. */
       }
       const reconstruction = validateEquationReconstruction(
         pageNumber,
@@ -2418,91 +2533,44 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
         "vector",
         {
           mode: "display",
+          recognitionConfidence: embeddedTextCorrupt ? undefined : 0.96,
           sourceSpanIds: block.sourceSpanIds || [],
           sourceRegionIds: block.sourceBlockIds || [],
           sourceObjectIds: block.sourceObjectIds || [],
         },
       );
-      if (reconstruction.fallbackAsset) assets.push(reconstruction.fallbackAsset);
-      else if (reconstruction.sourceEvidenceAsset) assets.push(reconstruction.sourceEvidenceAsset);
-      if (reconstruction.validation.accepted) {
-        const equationMarkdown = equationToMarkdown(reconstruction.validation.output.equationIR) ||
-          (DISPLAY_MATH + "\n" + reconstruction.validation.output.latex + "\n" + DISPLAY_MATH);
-        markdown = [
-          equationMarkdown,
-          equationParts?.prose
-            ? escapeMd(inlineMathMarkdown(equationParts.prose), {
-                protectBlockStart: false,
-              })
-            : "",
-        ]
-          .filter(Boolean)
-          .join("\n\n");
-        entryKind = "equation";
-      } else {
-        markdown = [
-          reconstruction.fallbackMarker,
-          equationParts?.prose
-            ? escapeMd(inlineMathMarkdown(equationParts.prose), {
-                protectBlockStart: false,
-              })
-            : "",
-        ]
-          .filter(Boolean)
-          .join("\n\n");
-        entryKind = "equation-fallback";
-      }
+      const { validation, fallbackAsset } = reconstruction;
+      if (fallbackAsset) assets.push(fallbackAsset);
+      equationIR = validation.output.equationIR;
+      const equationMarkdown = equationToMarkdown(equationIR)
+        || (DISPLAY_MATH + "\n" + validation.output.latex + "\n" + DISPLAY_MATH);
+      markdown = [
+        validation.accepted
+          ? [equationMarkdown, reconstruction.sourceMarker].filter(Boolean).join("\n\n")
+          : [equationMarkdown, reconstruction.sourceMarker || reconstruction.fallbackMarker]
+            .filter(Boolean)
+            .join("\n\n"),
+        equationParts?.prose
+          ? escapeMd(inlineMathMarkdown(equationParts.prose), { protectBlockStart: false })
+          : "",
+      ].filter(Boolean).join("\n\n");
+      entryKind = validation.accepted ? "equation" : "equation-fallback";
       rawText = undefined;
-      equationIR = reconstruction.validation.output.equationIR;
-      reviewItems.push(
-        equationReviewItem(
-          reconstruction.candidate,
-          reconstruction.validation,
-          "mupdf-structured-text",
-        ),
-      );
+      reviewItems.push(equationReviewItem(reconstruction.candidate, validation, "mupdf-structured-text"));
     }
     else if (heading)
-      markdown = `${"#".repeat(heading)} ${escapeMd(
-        options.extractEquations ? inlineMathMarkdown(text) : text,
-        {
-        protectBlockStart: false,
-        },
-      )}`;
+      markdown = `${"#".repeat(heading)} ${escapeMd(markdownText, { protectBlockStart: false })}`;
     else if (
       block.size < bodySize * 0.82 &&
       block.bbox[1] > pageBounds[1] + pageHeight * 0.55
     )
       markdown = /^(\d{1,3})\s+(.+)/.test(text)
         ? text.replace(/^(\d{1,3})\s+(.+)/, "> [^$1]: $2")
-        : `> ${escapeMd(text)}`;
+        : `> ${escapeMd(markdownText)}`;
     else
-      markdown = escapeMd(
-        options.extractEquations ? inlineMathMarkdown(text) : text,
-      );
-    let inlineEquationIRs = [];
-    if (options.extractEquations && !equationIR) {
-      const inlineCandidates = inlineEquationCandidates(text);
-      if (inlineCandidates.length) {
-        let inlineSourceAsset = null;
-        if (options.preserveVisuals !== false) {
-          try {
-            const rendered = cropPage(page, block.bbox, 2.6);
-            inlineSourceAsset = {
-              id: `p${pageNumber}-inline-equations-${Math.round(block.bbox[0])}-${Math.round(block.bbox[1])}`,
-              page: pageNumber,
-              kind: "equation-source",
-              bbox: block.bbox,
-              sourceType: "vector",
-              caption: "Inline equation source",
-              ...rendered,
-            };
-            assets.push(inlineSourceAsset);
-          } catch {
-            // The inline formula remains editable only when the text graph validates.
-          }
-        }
-        inlineEquationIRs = inlineCandidates.map((candidate, index) => equationFromLatex({
+      markdown = escapeMd(markdownText);
+    const inlineEquationIRs = options.extractEquations && !equationIR
+      ? inlineEquationCandidates(text).map((candidate, index) => equationFromLatex({
           id: `p${pageNumber}-inline-equation-${Math.round(block.bbox[1])}-${index + 1}`,
           mode: "inline",
           page: pageNumber,
@@ -2516,8 +2584,8 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
             spanIds: block.sourceSpanIds || [],
             regionIds: block.sourceBlockIds || [],
             objectIds: block.sourceObjectIds || [],
-            cropIds: inlineSourceAsset ? [inlineSourceAsset.id] : [],
-            cropAvailable: Boolean(inlineSourceAsset?.data?.byteLength),
+            cropIds: [],
+            cropAvailable: false,
           },
           confidence: {
             detection: candidate.explicit ? 0.94 : 0.76,
@@ -2527,62 +2595,63 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
             reconstruction: candidate.explicit ? 0.9 : 0.78,
             export: 0.96,
           },
-        }));
-      }
-    }
-      entries.push({
-        y: block.bbox[1],
-        x: block.bbox[0],
-        bbox: block.bbox,
-        markdown,
-        kind: entryKind,
-        ...(equationIR ? { equationIR, mode: equationIR.mode } : {}),
-        ...(inlineEquationIRs.length ? { inlineEquationIRs } : {}),
-        ...(equationIR
-          ? {
-              confidence: {
-                overall: equationIR.confidence.detection,
-                extraction: equationIR.confidence.detection,
-                structure: equationIR.confidence.structure,
-                reconstruction: equationIR.confidence.reconstruction,
-                export: equationIR.confidence.export,
-              },
-              reconstructionConfidence: equationIR.confidence.reconstruction,
-              exportConfidence: equationIR.confidence.export,
-            }
+        }))
+      : [];
+    entries.push({
+      y: block.bbox[1],
+      x: block.bbox[0],
+      bbox: block.bbox,
+      markdown,
+      kind: entryKind,
+      ...(equationIR ? { equationIR, mode: equationIR.mode } : {}),
+      ...(inlineEquationIRs.length ? { inlineEquationIRs } : {}),
+      ...(equationIR
+        ? {
+            confidence: {
+              overall: equationIR.confidence.detection,
+              extraction: equationIR.confidence.detection,
+              structure: equationIR.confidence.structure,
+              reconstruction: equationIR.confidence.reconstruction,
+              export: equationIR.confidence.export,
+            },
+            reconstructionConfidence: equationIR.confidence.reconstruction,
+            exportConfidence: equationIR.confidence.export,
+          }
+        : entryKind === "text" && !embeddedTextCorrupt
+          ? { confidence: 0.96 }
           : {}),
-        rawText,
-        layoutType: block.type,
-        headingLevel: block.headingLevel,
-        structureConfidence: block.structureConfidence,
-        disposition: block.structureConfidence < 0.6 ? "needs-review" : "reconstructed",
-        diagnostics: block.diagnostics,
-        sourceBlockIds: block.sourceBlockIds,
-        sourceSpanIds: block.sourceSpanIds,
-        sourceObjectIds: block.sourceObjectIds,
-        extractionMethod:
-          entryKind === "table"
-            ? "validated-table-geometry"
-            : entryKind === "equation"
-              ? "mupdf-equation-reconstruction"
-              : entryKind === "equation-fallback"
-                ? "source-preservation"
-                : "mupdf-structured-text",
-        ...(table
-          ? {
-              tableIR: table.tableIR,
-              confidence: {
-                overall: table.confidence,
-                structure: table.confidence,
-              },
-              provenance: {
-                source: "pdf-block-table",
-                rows: table.rows.length,
-                columns: table.rows[0]?.length || 0,
-              },
-            }
-          : {}),
-      });
+      rawText,
+      layoutType: block.type,
+      headingLevel: heading,
+      structureConfidence: block.structureConfidence,
+      disposition: block.structureConfidence < 0.6 ? "needs-review" : "reconstructed",
+      diagnostics: block.diagnostics,
+      sourceBlockIds: block.sourceBlockIds,
+      sourceSpanIds: block.sourceSpanIds,
+      sourceObjectIds: block.sourceObjectIds,
+      extractionMethod:
+        entryKind === "table"
+          ? "validated-table-geometry"
+          : entryKind === "equation"
+            ? "mupdf-equation-reconstruction"
+            : entryKind === "equation-fallback"
+              ? "source-preservation"
+              : "mupdf-structured-text",
+      ...(table
+        ? {
+            tableIR: table.tableIR,
+            confidence: {
+              overall: table.confidence,
+              structure: table.confidence,
+            },
+            provenance: {
+              source: "pdf-block-table",
+              rows: table.rows.length,
+              columns: table.rows[0]?.length || 0,
+            },
+          }
+        : {}),
+    });
   }
 
   if (options.preserveVisuals !== false) {
@@ -2596,8 +2665,21 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
         value.image.destroy?.();
         continue;
       }
+      if (hasConfidentExtractionForRegion(entries, value.bbox)) {
+        value.image.destroy?.();
+        continue;
+      }
+      const imageArea = (value.bbox[2] - value.bbox[0]) * (value.bbox[3] - value.bbox[1]);
+      const pageScanTextOnly = ocrApplied
+        && ocrTextConfidence >= HIGH_EXTRACTION_CONFIDENCE
+        && imageArea / pageArea >= 0.82
+        && !ocrCandidates.some((candidate) => candidate.kind !== "equation");
+      if (pageScanTextOnly) {
+        value.image.destroy?.();
+        continue;
+      }
       const area =
-        (value.bbox[2] - value.bbox[0]) * (value.bbox[3] - value.bbox[1]);
+        imageArea;
       if (
         area / pageArea < 0.0025 ||
         (area / pageArea > 0.82 && blocks.length > 2)
@@ -2665,6 +2747,7 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
         bodySize,
       )) {
         if (preserveSourcePage) continue;
+        if (hasConfidentExtractionForRegion(entries, candidate.bbox)) continue;
         if (
           assets.some(
             (asset) =>
@@ -2741,6 +2824,7 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
     for (const candidate of ocrCandidates) {
       if (preserveSourcePage) continue;
       if (candidate.kind === "equation") continue;
+      if (hasConfidentExtractionForRegion(entries, candidate.bbox)) continue;
       if (
         assets.some(
           (asset) =>
@@ -2889,7 +2973,10 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
     textBlocks: blocks.length,
     images: images.length,
     vectors: vectors.length,
-    equations: (text.match(/^\$\$/gm) || []).length / 2,
+    equations: textEntries.filter((entry) => ["equation", "equation-fallback"].includes(entry.kind)).length
+      + textEntries
+        .filter((entry) => entry.kind === "text")
+        .reduce((count, entry) => count + (entry.markdown.match(/kind="equation"/gu) || []).length, 0),
     preservedVisuals: visualAssets.length,
     preservedEquationFallbacks: textEntries.filter(
       (entry) => entry.kind === "equation-fallback",
@@ -2900,14 +2987,20 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
     sourcePagePreserved: visualAssets.some((asset) => asset.kind === "source-page"),
     sourcePageFallbackFailed,
     layoutConfidence: layout.confidence,
-    textConfidence: embeddedTextCorrupt ? 0.55 : ocrApplied ? 0.72 : 0.96,
+    textConfidence: embeddedTextCorrupt
+      ? ocrTextConfidence ?? 0.55
+      : ocrApplied
+        ? ocrTextConfidence ?? 0.72
+        : 0.96,
     tableConfidence: average(
       textEntries
         .filter((entry) => entry.kind === "table")
         .map((entry) => entry.confidence?.overall),
     ),
     equationConfidence: average(
-      reviewItems.map((item) => item.candidate?.confidence?.overall),
+      textEntries
+        .filter((entry) => ["equation", "equation-fallback"].includes(entry.kind))
+        .map((entry) => entry.confidence?.overall ?? entry.confidence),
     ),
     equationConfidenceDimensions,
     equationDispositions: Object.fromEntries(

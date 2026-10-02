@@ -12,6 +12,21 @@ const browserPolicy = Object.freeze({
     review: "APPROVED_WITH_NOTE",
     purpose: "Bundled English OCR traineddata",
   },
+  "@tesseract.js-data/rus": {
+    expectedLicenses: ["MIT"],
+    review: "APPROVED_WITH_NOTE",
+    purpose: "Bundled Russian OCR traineddata",
+  },
+  "@tesseract.js-data/fas": {
+    expectedLicenses: ["MIT"],
+    review: "APPROVED_WITH_NOTE",
+    purpose: "Bundled Persian OCR traineddata",
+  },
+  "@tesseract.js-data/chi_sim": {
+    expectedLicenses: ["MIT"],
+    review: "APPROVED_WITH_NOTE",
+    purpose: "Bundled Simplified Chinese OCR traineddata",
+  },
   docx: {
     expectedLicenses: ["MIT"],
     review: "APPROVED",

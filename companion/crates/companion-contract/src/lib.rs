@@ -6,7 +6,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub const PROTOCOL_MAJOR: u16 = 1;
-pub const PROTOCOL_MINOR: u16 = 3;
+pub const PROTOCOL_MINOR: u16 = 4;
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const IR_SCHEMA_ID: &str = "glyphmend.semantic-document-ir";
 pub const IR_SCHEMA_VERSION: u16 = 2;
@@ -240,6 +240,10 @@ pub struct DocumentExtractionOptions {
     pub schema: String,
     pub selected_pages: Vec<u32>,
     pub ocr_accuracy: OcrAccuracy,
+    #[serde(default = "default_ocr_language")]
+    pub ocr_language: String,
+    #[serde(default = "default_true")]
+    pub extract_equations: bool,
     #[serde(default = "default_true")]
     pub use_ocr: bool,
     #[serde(default)]
@@ -252,6 +256,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_ocr_language() -> String {
+    "eng".to_string()
+}
+
 impl DocumentExtractionOptions {
     pub fn validate(&self, page_count: u32) -> Result<(), ContractError> {
         if self.schema != DOCUMENT_INPUT_SCHEMA
@@ -261,6 +269,7 @@ impl DocumentExtractionOptions {
                 .selected_pages
                 .iter()
                 .any(|page| *page == 0 || *page > page_count)
+            || !["eng", "rus", "fas", "chi_sim"].contains(&self.ocr_language.as_str())
             || self
                 .password
                 .as_ref()

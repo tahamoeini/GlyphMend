@@ -211,29 +211,29 @@
               </fieldset>
               <fieldset class="advanced-group">
                 <legend>Visuals</legend>
-                <label class="control-row compact"><span><strong>Preserve visual content</strong><small>Keep figures and formula fallbacks</small></span><span class="switch"><input id="preserveVisuals" type="checkbox" checked><i aria-hidden="true"></i></span></label>
+                <label class="control-row compact"><span><strong>Preserve visual content</strong><small>Keep figures and review crops</small></span><span class="switch"><input id="preserveVisuals" type="checkbox" checked><i aria-hidden="true"></i></span></label>
                 <label class="control-row compact"><span><strong>Keep unresolved visuals</strong></span><span class="switch"><input id="placeholders" type="checkbox" checked><i aria-hidden="true"></i></span></label>
                 <label class="control-row compact"><span><strong>Keep source page markers</strong></span><span class="switch"><input id="preserveMarkers" type="checkbox" checked><i aria-hidden="true"></i></span></label>
               </fieldset>
               <fieldset class="advanced-group">
                 <legend>Math</legend>
-                <label class="control-row compact"><span><strong>Extract equations</strong><small>Prefer editable math; preserve source when uncertain</small></span><span class="switch"><input id="extractEquations" type="checkbox" checked><i aria-hidden="true"></i></span></label>
+                <label class="control-row compact"><span><strong>Extract editable formulas</strong><small>Export LaTeX and Word math; keep source crops when recognition is uncertain</small></span><span class="switch"><input id="extractEquations" type="checkbox" checked><i aria-hidden="true"></i></span></label>
               </fieldset>
               <fieldset class="advanced-group">
                 <legend>OCR</legend>
                 <label class="control-row compact"><span><strong>Use OCR when needed</strong><small>Read pages without usable embedded text</small></span><span class="switch"><input id="useOcr" type="checkbox" checked><i aria-hidden="true"></i></span></label>
                 <label class="control-row compact"><span><strong>Force OCR</strong><small>Apply OCR to every selected page</small></span><span class="switch"><input id="forceOcr" type="checkbox"><i aria-hidden="true"></i></span></label>
-                <div class="field-grid"><label class="field-label" for="ocrLanguage">OCR language<select id="ocrLanguage"><option value="eng">English (bundled)</option></select></label><label class="field-label" for="ocrDpi">Render DPI<input id="ocrDpi" type="number" min="72" max="600" value="300"></label></div>
+                <div class="field-grid"><label class="field-label" for="ocrLanguage">OCR language<select id="ocrLanguage"><option value="eng">English (bundled)</option><option value="rus">Russian (bundled)</option><option value="fas">Persian (bundled)</option><option value="chi_sim">Simplified Chinese (bundled)</option></select></label><label class="field-label" for="ocrDpi">Render DPI<input id="ocrDpi" type="number" min="72" max="600" value="300"></label></div>
               </fieldset>
               <fieldset class="advanced-group">
                 <legend>Processing</legend>
                 <label class="field-label" for="extractionEngine">Extraction engine<select id="extractionEngine"><option value="browser" selected>Browser (default)</option><option value="companion">Optional Companion</option></select><small>If the Companion cannot connect or fails, this job continues in the browser.</small></label>
-                <label class="field-label" for="companionOcrAccuracy">Companion OCR accuracy<select id="companionOcrAccuracy"><option value="fast" selected>Fast (default)</option><option value="high-accuracy">High Accuracy</option></select><small>English OCR model; applies when Companion is selected.</small></label>
+                <label class="field-label" for="companionOcrAccuracy">Companion OCR accuracy<select id="companionOcrAccuracy"><option value="fast" selected>Fast (default)</option><option value="high-accuracy">High Accuracy</option></select><small>Uses the selected OCR language when Companion is selected.</small></label>
                 <label class="field-label" for="pdfPassword">PDF password<input id="pdfPassword" type="password" autocomplete="off" placeholder="For encrypted PDFs"></label>
                 <div class="field-grid"><label class="field-label" for="maxFileMb">Max file (MB)<input id="maxFileMb" type="number" min="1" max="4096" value="512"></label><label class="field-label" for="maxPages">Max pages<input id="maxPages" type="number" min="1" max="10000" value="2000"></label></div>
                 <label class="field-label" for="checkpointPages">Checkpoint every<input id="checkpointPages" type="number" min="1" max="100" value="20"><small>Pages per processing batch</small></label>
                 <label class="control-row compact"><span><strong>Strict mode</strong><small>Stop on the first page error</small></span><span class="switch"><input id="strict" type="checkbox"><i aria-hidden="true"></i></span></label>
-                <p class="technical-note">Browser extraction remains the complete, install-free default. The optional Companion uses local PDFium and English Tesseract OCR. Both feed the same Semantic Document IR and exports.</p>
+                <p class="technical-note">Browser extraction remains the complete, install-free default. The optional Companion uses local PDFium and the selected Tesseract OCR language. Both feed the same Semantic Document IR and exports.</p>
               </fieldset>
               <fieldset class="advanced-group">
                 <legend>Optional companion</legend>

@@ -4,7 +4,7 @@
 
 ## What stays local
 
-The browser edition does not upload the selected PDF or extracted content. Processing uses MuPDF WebAssembly and, when needed, the bundled English Tesseract OCR worker. Resume data is stored in the browser's IndexedDB database; exporting a workspace is an explicit user action.
+The browser edition does not upload the selected PDF or extracted content. Processing uses MuPDF WebAssembly and, when needed, the bundled Tesseract OCR worker. OCR models for English, Russian, Persian, and Simplified Chinese run locally. Resume data is stored in the browser's IndexedDB database; exporting a workspace is an explicit user action.
 
 ## Branding at runtime
 
@@ -17,6 +17,7 @@ See [branding.md](branding.md) for the full configuration contract.
 ## Choosing extraction settings
 
 - Keep **OCR pages without usable text** enabled for scanned documents.
+- Choose the document's primary language under **OCR language**. Persian output follows right-to-left reading order.
 - Leave **Force OCR** off for mixed or digitally generated PDFs; it bypasses native text extraction and is slower.
 - Start with 20 checkpoint pages. Lower it when browser memory is tight; raise it only after a representative run is stable.
 - Keep **strict** off for exploratory runs. It records a skipped page as `needs-review` instead of discarding the rest of the batch.
@@ -45,7 +46,7 @@ complete          → extraction and document-level cleanup finished
 | MuPDF startup timeout (mupdf-load) | MuPDF did not initialize within 90 seconds after worker-start. In the Network panel, verify mupdf.js, mupdf-wasm.js, and mupdf-wasm.wasm return HTTP 200 under /mupdf/; the WASM response must use application/wasm. A loader rejection reports the same phase and elapsed time. |
 | Tesseract `importScripts` error | Rebuild/redeploy so `/tesseract/worker.min.js`, `/tesseract-core/`, and `/tessdata/` are present. |
 | A run reports an extraction version below 14 | Reload with browser cache bypassed or unregister the old service worker, then reopen the PDF. The current restoration branch uses extraction version 14 and invalidates incompatible older browser checkpoints. |
-| OCR-only output loses source evidence | Confirm the current build is loaded, then retry with **Preserve visual content** enabled. OCR pages retain source evidence conservatively rather than claiming editable reconstruction of raster tables or formulas. |
+| OCR-only output needs review | Confirm the current build is loaded and keep **Preserve visual content** enabled. Parsed formula candidates export as editable LaTeX/Word math; uncertain formulas retain their source crop for comparison. |
 | Brand changes do not appear | Confirm `branding.json` and the configured logo path are deployed, then reload. Run `npm run brand:sync` before rebuilding PWA metadata. |
 | Resume unavailable | Check browser storage permissions and available disk quota; export a workspace checkpoint before clearing site data. |
 | Slow extraction | Expected for OCR-heavy scans. Process a short representative range first to choose a practical checkpoint size. |

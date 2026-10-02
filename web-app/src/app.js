@@ -875,6 +875,8 @@ async function runCompanionBatch(batch, wanted) {
       pageCount: state.pageCount,
       selectedPages: batch,
       ocrAccuracy: $("companionOcrAccuracy").value,
+      ocrLanguage: state.options.ocrLanguage,
+      extractEquations: state.options.extractEquations,
       useOcr: state.options.useOcr,
       forceOcr: state.options.forceOcr,
       password: $("pdfPassword").value || undefined,
@@ -1215,6 +1217,7 @@ function qualityStatusMessage(status) {
 function renderMarkdown() {
   state.previewUrls.forEach(URL.revokeObjectURL);
   state.previewUrls = [];
+  $("markdownEditor").dir = "auto";
   const source = (state.markdown || "*Extract a document to begin.*").replace(
     /^\[SOURCE_VISUAL\s+[^\]]*id="([^"]+)"[^\]]*kind="([^"]+)"[^\]]*\]$/gm,
     (_all, id, kind) =>
@@ -1223,6 +1226,9 @@ function renderMarkdown() {
   $("renderedPreview").innerHTML = DOMPurify.sanitize(
     marked.parse(renderAccessibleMathMarkdown(source), { gfm: true }),
   );
+  $("renderedPreview")
+    .querySelectorAll("p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th")
+    .forEach((block) => { block.dir = "auto"; });
   const assets = assetMap();
   $("renderedPreview")
     .querySelectorAll("[data-asset]")

@@ -138,13 +138,16 @@ fn extract_document(
     }
 
     let tessdata = if options.use_ocr || options.force_ocr {
-        Some(resolve_tessdata(&options.ocr_accuracy)?)
+        Some(resolve_tessdata(
+            &options.ocr_accuracy,
+            &options.ocr_language,
+        )?)
     } else {
         None
     };
     let model_hash = tessdata
         .as_ref()
-        .map(|path| sha256_file(&path.join("eng.traineddata")))
+        .map(|path| sha256_file(&path.join(format!("{}.traineddata", options.ocr_language))))
         .transpose()?;
     let completed = Arc::new(AtomicU32::new(0));
     let total_pages = options.selected_pages.len() as u32;
@@ -184,6 +187,7 @@ fn extract_document(
                                 raw.render_height,
                                 raw.width,
                                 raw.height,
+                                &options.ocr_language,
                             ) {
                                 Ok((segments, confidence)) => {
                                     raw.ocr_segments = segments;
@@ -423,7 +427,7 @@ fn extract_document(
             "engine": { "id": ENGINE_ID, "version": ENGINE_VERSION },
             "sourceSha256": input.content_hash,
             "ocr": {
-                "language": "eng",
+                "language": options.ocr_language,
                 "accuracy": match options.ocr_accuracy {
                     companion_contract::OcrAccuracy::Fast => "fast",
                     companion_contract::OcrAccuracy::HighAccuracy => "high-accuracy",
@@ -467,7 +471,7 @@ fn bind_pdfium_library() -> Result<Pdfium> {
     Ok(Pdfium::new(library))
 }
 
-fn resolve_tessdata(accuracy: &companion_contract::OcrAccuracy) -> Result<PathBuf> {
+fn resolve_tessdata(accuracy: &companion_contract::OcrAccuracy, language: &str) -> Result<PathBuf> {
     let model_set = match accuracy {
         companion_contract::OcrAccuracy::Fast => "fast",
         companion_contract::OcrAccuracy::HighAccuracy => "best",
@@ -482,8 +486,10 @@ fn resolve_tessdata(accuracy: &companion_contract::OcrAccuracy) -> Result<PathBu
         })
         .ok_or_else(|| anyhow!("could not locate Companion model directory"))?;
     let path = root.join(model_set);
-    if !path.join("eng.traineddata").is_file() {
-        return Err(anyhow!("bundled English {model_set} OCR model is missing"));
+    if !path.join(format!("{language}.traineddata")).is_file() {
+        return Err(anyhow!(
+            "bundled {language} {model_set} OCR model is missing"
+        ));
     }
     Ok(path)
 }
@@ -502,12 +508,13 @@ fn recognize_tiff(
     render_height: u32,
     page_width: f64,
     page_height: f64,
+    language: &str,
 ) -> Result<(Vec<TextSegment>, Option<f64>)> {
     let data_path = tessdata
         .to_str()
         .ok_or_else(|| anyhow!("OCR model path is not valid UTF-8"))?;
-    let mut tesseract = leptess::LepTess::new(Some(data_path), "eng")
-        .map_err(|error| anyhow!("could not initialize English OCR: {error}"))?;
+    let mut tesseract = leptess::LepTess::new(Some(data_path), language)
+        .map_err(|error| anyhow!("could not initialize {language} OCR: {error}"))?;
     tesseract
         .set_image_from_mem(tiff)
         .context("Tesseract could not read the rendered page")?;
@@ -572,6 +579,176 @@ fn recognize_tiff(
     Ok((segments, mean))
 }
 
+fn formula_markdown(text: &str, enabled: bool) -> Option<String> {
+    if !enabled {
+        return None;
+    }
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let chars = normalized.chars().collect::<Vec<_>>();
+    if chars.len() < 3 || chars.len() > 240 || normalized.split_whitespace().count() > 18 {
+        return None;
+    }
+
+    let is_relation = chars
+        .iter()
+        .any(|ch| matches!(ch, '=' | '<' | '>' | '≤' | '≥' | '≠' | '≈'));
+    let operator_count = chars
+        .iter()
+        .filter(|ch| {
+            matches!(
+                ch,
+                '=' | '<'
+                    | '>'
+                    | '≤'
+                    | '≥'
+                    | '≠'
+                    | '≈'
+                    | '+'
+                    | '-'
+                    | '−'
+                    | '*'
+                    | '/'
+                    | '×'
+                    | '÷'
+                    | '^'
+                    | '_'
+                    | '∑'
+                    | '∏'
+                    | '∫'
+                    | '√'
+            )
+        })
+        .count();
+    let has_script = chars.iter().any(|ch| matches!(ch, '^' | '_'));
+    if (!is_relation && operator_count < 2 && !has_script) || operator_count == 0 {
+        return None;
+    }
+
+    let functions = [
+        "sin", "cos", "tan", "log", "ln", "exp", "max", "min", "sqrt", "frac", "alpha", "beta",
+        "gamma", "delta", "theta", "lambda", "mu", "pi", "sigma", "omega",
+    ];
+    let contains_prose = normalized.split_whitespace().any(|token| {
+        let letters = token.chars().filter(|ch| ch.is_alphabetic()).count();
+        let lowercase = token.trim_start_matches('\\').to_ascii_lowercase();
+        letters > 3 && !functions.contains(&lowercase.as_str())
+    });
+    if (contains_prose && operator_count < 2)
+        || normalized.contains('?')
+        || normalized.contains('!')
+    {
+        return None;
+    }
+
+    let mut latex = square_root_latex(&normalized);
+    for (symbol, replacement) in [
+        ("≤", r"\leq"),
+        ("≥", r"\geq"),
+        ("≠", r"\neq"),
+        ("≈", r"\approx"),
+        ("×", r"\times"),
+        ("÷", r"\div"),
+        ("∑", r"\sum"),
+        ("∏", r"\prod"),
+        ("∫", r"\int"),
+        ("∞", r"\infty"),
+    ] {
+        latex = latex.replace(symbol, replacement);
+    }
+    Some(format!("$$\n{latex}\n$$"))
+}
+
+fn square_root_latex(text: &str) -> String {
+    let chars = text.chars().collect::<Vec<_>>();
+    let mut output = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] != '√' {
+            output.push(chars[index]);
+            index += 1;
+            continue;
+        }
+
+        let mut start = index + 1;
+        while chars.get(start).is_some_and(|ch| ch.is_whitespace()) {
+            start += 1;
+        }
+        if start >= chars.len() {
+            output.push('√');
+            index += 1;
+            continue;
+        }
+
+        let close = match chars[start] {
+            '(' => Some(')'),
+            '[' => Some(']'),
+            '{' => Some('}'),
+            _ => None,
+        };
+        if let Some(close) = close {
+            let open = chars[start];
+            let mut depth = 0;
+            let mut end = start;
+            while end < chars.len() {
+                if chars[end] == open {
+                    depth += 1;
+                } else if chars[end] == close {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                end += 1;
+            }
+            if end < chars.len() {
+                output.push_str(r"\sqrt{");
+                output.extend(chars[start + 1..end].iter().copied());
+                output.push('}');
+                index = end + 1;
+                continue;
+            }
+            output.push('√');
+            index += 1;
+            continue;
+        }
+
+        let mut end = start;
+        while end < chars.len()
+            && !chars[end].is_whitespace()
+            && !matches!(
+                chars[end],
+                '=' | '<'
+                    | '>'
+                    | '≤'
+                    | '≥'
+                    | '≠'
+                    | '≈'
+                    | '+'
+                    | '−'
+                    | '-'
+                    | '*'
+                    | '/'
+                    | '×'
+                    | '÷'
+                    | ','
+                    | ';'
+            )
+        {
+            end += 1;
+        }
+        if end == start {
+            output.push('√');
+            index += 1;
+            continue;
+        }
+        output.push_str(r"\sqrt{");
+        output.extend(chars[start..end].iter().copied());
+        output.push('}');
+        index = end;
+    }
+    output
+}
+
 fn page_ir(raw: &RawPage, options: &DocumentExtractionOptions, model_hash: Option<&str>) -> Value {
     let used_ocr = raw.tiff.is_some() && raw.ocr_error.is_none();
     let segments = if (raw.force_ocr && used_ocr) || raw.native_segments.is_empty() {
@@ -584,10 +761,22 @@ fn page_ir(raw: &RawPage, options: &DocumentExtractionOptions, model_hash: Optio
         .enumerate()
         .map(|(index, segment)| {
             let text = segment.text.trim();
+            let equation = formula_markdown(text, options.extract_equations);
+            let node_type = if equation.is_some() { "equation" } else { "paragraph" };
+            let markdown = equation.as_deref().unwrap_or(text);
+            let diagnostics = if equation.is_some() {
+                vec![json!({
+                    "code": "FORMULA_RECONSTRUCTION_NEEDS_REVIEW",
+                    "severity": "info",
+                    "message": "Formula text is exported as LaTeX-compatible math. Compare it with the source PDF page."
+                })]
+            } else {
+                Vec::new()
+            };
             json!({
                 "id": format!("companion-page-{}-segment-{index}", raw.page_number),
-                "type": "paragraph",
-                "content": { "markdown": text, "text": text },
+                "type": node_type,
+                "content": { "markdown": markdown, "text": text },
                 "sourcePage": raw.page_number,
                 "bbox": segment.bbox,
                 "coordinateSpace": "page-points",
@@ -606,9 +795,9 @@ fn page_ir(raw: &RawPage, options: &DocumentExtractionOptions, model_hash: Optio
                     "reconstruction": null,
                     "export": null
                 },
-                "disposition": "reconstructed",
+                "disposition": if equation.is_some() { "needs-review" } else { "reconstructed" },
                 "reconstructionVersion": 2,
-                "diagnostics": []
+                "diagnostics": diagnostics
             })
         })
         .collect::<Vec<_>>();
@@ -617,14 +806,14 @@ fn page_ir(raw: &RawPage, options: &DocumentExtractionOptions, model_hash: Optio
         diagnostics.push(json!({
             "code": "NO_RECOGNIZED_TEXT",
             "severity": "warning",
-            "message": "No text was recovered by PDFium or English OCR on this page."
+            "message": format!("No text was recovered by PDFium or {} OCR on this page.", options.ocr_language)
         }));
     }
     if let Some(error) = &raw.ocr_error {
         diagnostics.push(json!({
             "code": "OCR_FAILED",
             "severity": "warning",
-            "message": "English OCR failed for this page.",
+            "message": format!("{} OCR failed for this page.", options.ocr_language),
             "details": { "reason": error }
         }));
     }
