@@ -1,4 +1,5 @@
 const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+const OCR_LANGUAGES = new Set(["eng", "rus", "fas", "chi_sim"]);
 
 const EXTRACTION_OPTION_KEYS = new Set([
   "removeHeaders",
@@ -171,7 +172,8 @@ function validatedExtractionOptions(value, limits) {
     out[key] = value[key];
   }
   const language = own(value, "ocrLanguage") ? boundedString(value.ocrLanguage, "OCR language", 16, { allowEmpty: false }) : "eng";
-  if (language !== "eng") throw new TypeError("Only the bundled offline OCR language 'eng' is allowed.");
+  if (!OCR_LANGUAGES.has(language))
+    throw new TypeError("OCR language must be one of the bundled offline models: eng, rus, fas, chi_sim.");
   out.ocrLanguage = language;
   out.ocrDpi = own(value, "ocrDpi") ? finiteNumber(value.ocrDpi, "OCR DPI", 72, 600) : 300;
   assertSafeStructuredValue(out, "Extraction request options", limits);

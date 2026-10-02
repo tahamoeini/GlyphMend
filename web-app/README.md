@@ -10,13 +10,13 @@ For operations and troubleshooting, see the [browser guide](../docs/browser.md).
 
 - PDF.js source-page viewer.
 - MuPDF WebAssembly structured extraction in a Web Worker, with text, images, font information, and page geometry.
-- Conservative heading, table, and editable-equation detection; repeated header/footer cleanup; wrap dehyphenation; and cross-page paragraph repair.
-- Bundled Tesseract WebAssembly fallback for English scanned pages, forced OCR, and configurable render DPI.
+- Conservative heading and table detection; validated formulas are exported as editable LaTeX/Word math, with source crops retained when reconstruction is uncertain. Repeated header/footer cleanup, wrap dehyphenation, and cross-page paragraph repair remain enabled.
+- Bundled Tesseract WebAssembly fallback for English, Russian, Persian, and Simplified Chinese scanned pages, forced OCR, and configurable render DPI.
 - Source figures retained as PNG assets when supported.
 - Editable Markdown, safe preview, source comparison, search, and quality metrics.
 - Pause, cancel, resume, workspace import/export, and incremental IndexedDB checkpoints.
 - Shared Markdown, plain text, Word, quality-report, log, and complete-bundle exports.
-- Native Office Math for recognized equations and embedded source visuals in DOCX.
+- Editable Word equations, with source image crops for formulas that need review.
 - Offline-capable installable PWA after the first successful load.
 
 ## Run and build

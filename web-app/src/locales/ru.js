@@ -96,14 +96,14 @@ const translations = {
   "Normalize task lists": "Нормализовать списки задач",
   Visuals: "Изображения",
   "Preserve visual content": "Сохранять изображения",
-  "Keep figures and formula fallbacks":
-    "Сохранять иллюстрации и резервные варианты формул",
+  "Keep figures and review crops":
+    "Сохранять иллюстрации и фрагменты для проверки",
   "Keep unresolved visuals": "Сохранять нераспознанные изображения",
   "Keep source page markers": "Сохранять маркеры исходных страниц",
   Math: "Математика",
-  "Extract equations": "Извлекать формулы",
-  "Prefer editable math; preserve source when uncertain":
-    "Предпочитать редактируемые формулы; при сомнении сохранять оригинал",
+  "Extract editable formulas": "Извлекать формулы в редактируемом виде",
+  "Export LaTeX and Word math; keep source crops when recognition is uncertain":
+    "Экспортировать формулы в LaTeX и Word; сохранять исходный фрагмент при низкой уверенности распознавания",
   OCR: "OCR",
   "Use OCR when needed": "Использовать OCR при необходимости",
   "Read pages without usable embedded text":
@@ -113,6 +113,9 @@ const translations = {
     "Применять OCR ко всем выбранным страницам",
   "OCR language": "Язык OCR",
   "English (bundled)": "Английский (в комплекте)",
+  "Russian (bundled)": "Русский (в комплекте)",
+  "Persian (bundled)": "Персидский (в комплекте)",
+  "Simplified Chinese (bundled)": "Упрощённый китайский (в комплекте)",
   "Render DPI": "Разрешение рендеринга, DPI",
   Processing: "Обработка",
   "PDF password": "Пароль PDF",
@@ -123,8 +126,12 @@ const translations = {
   "Pages per processing batch": "Страниц в пакете обработки",
   "Strict mode": "Строгий режим",
   "Stop on the first page error": "Остановиться при первой ошибке страницы",
-  "MuPDF WebAssembly and the bundled English OCR model run locally. Bounded batches release memory between checkpoints.":
-    "MuPDF WebAssembly и встроенная английская модель OCR работают локально. Ограниченные пакеты освобождают память между контрольными точками.",
+  "MuPDF WebAssembly and the selected local OCR model run on your device. English, Russian, Persian, and Simplified Chinese models are bundled.":
+    "MuPDF WebAssembly и выбранная локальная модель OCR работают на устройстве. В комплект входят модели для английского, русского, персидского и упрощённого китайского языков.",
+  "Uses the selected OCR language when Companion is selected.":
+    "При выборе Companion используется выбранный язык OCR.",
+  "Browser extraction remains the complete, install-free default. The optional Companion uses local PDFium and the selected Tesseract OCR language. Both feed the same Semantic Document IR and exports.":
+    "Извлечение в браузере остаётся полным вариантом по умолчанию без установки. Дополнительный Companion использует локальные PDFium и выбранный язык Tesseract OCR. Оба варианта формируют одинаковые Semantic Document IR и экспорты.",
   "Workspace data": "Данные рабочей области",
   "Checkpoint controls": "Управление контрольными точками",
   "Export checkpoint": "Экспортировать контрольную точку",

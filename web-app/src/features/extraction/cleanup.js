@@ -769,7 +769,8 @@ export function documentMetrics(markdown) {
     words: (plainText(markdown).match(/[\p{L}\p{N}]+/gu) || []).length,
     headings: (markdown.match(/^#{1,6}\s/gm) || []).length,
     tables: (markdown.match(/^\|.*\|\n\|[-: |]+\|/gm) || []).length,
-    equations: Math.floor((markdown.match(/^\$\$/gm) || []).length / 2),
+    equations: Math.floor((markdown.match(/^\$\$/gm) || []).length / 2)
+      + (markdown.match(/^\[SOURCE_VISUAL\b(?=[^\]]*\bkind="equation")[^\]]+\]$/gm) || []).length,
     visuals: (markdown.match(/\[(?:VISUAL_PLACEHOLDER|SOURCE_VISUAL)/g) || [])
       .length,
     sourceVisuals: (markdown.match(/\[SOURCE_VISUAL/g) || []).length,

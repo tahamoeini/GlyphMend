@@ -20,7 +20,10 @@
         "typecheck": "node ./scripts/quality-check.mjs typecheck"
     },
     "dependencies": {
+        "@tesseract.js-data/chi_sim": "^1.0.0",
         "@tesseract.js-data/eng": "^1.0.0",
+        "@tesseract.js-data/fas": "^1.0.0",
+        "@tesseract.js-data/rus": "^1.0.0",
         "docx": "^9.5.1",
         "dompurify": "^3.2.6",
         "fflate": "^0.8.3",

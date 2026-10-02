@@ -158,8 +158,14 @@ export function validateEquationCandidate(candidate = {}, sourceAsset = {}, expe
     candidate.provider === "mupdf-structured-text" &&
     visual.exact &&
     confidence.overall >= threshold.review;
+  const highConfidenceOcrPass =
+    candidate.provider === "tesseract-ocr" &&
+    numeric(candidate.recognitionConfidence, 0) >= threshold.accept &&
+    confidence.overall >= threshold.review;
   const confidencePass =
-    (hasIndependentExpected && confidence.overall >= threshold.accept) || structuredTextConfidencePass;
+    (hasIndependentExpected && confidence.overall >= threshold.accept) ||
+    structuredTextConfidencePass ||
+    highConfidenceOcrPass;
   const mandatoryPassed = parsed.success && renderSuccess && semanticEquivalent && confidencePass;
 
   let disposition = "preserved";
@@ -179,7 +185,9 @@ export function validateEquationCandidate(candidate = {}, sourceAsset = {}, expe
       parsed.success ? "math parse succeeded" : "math parse failed",
       hasIndependentExpected
         ? "independent expected equation evidence was supplied"
-        : "no independent expected equation evidence was supplied",
+        : highConfidenceOcrPass
+          ? "high-confidence OCR and math validation passed"
+          : "no independent expected equation evidence was supplied",
       semanticEquivalent ? "semantic comparison matched expected structure" : "semantic comparison mismatched expected structure",
       renderSuccess ? "render-back generation succeeded" : "render-back generation failed",
       confidencePass ? "confidence threshold passed" : "confidence threshold not reached",

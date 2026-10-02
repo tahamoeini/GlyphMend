@@ -127,7 +127,7 @@ jobs:
           "VCPKG_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
       - name: Build Companion
         run: cargo build --locked --release --target "${{ matrix.target }}" -p companion-cli
-      - name: Assemble portable runtime and English OCR models
+      - name: Assemble portable runtime and multilingual OCR models
         id: bundle
         shell: bash
         env:
@@ -159,18 +159,34 @@ jobs:
             { printf '%s\n' tesseract leptonica; brew deps --installed tesseract leptonica; } | sort -u | while read -r dep; do brew list --verbose "$dep"; done | grep -E '\.dylib$' | sort -u | while IFS= read -r lib; do [[ -f "$lib" ]] && cp -L "$lib" "$package/lib/"; done
           fi
           pdfium_hash=$(file_hash "$pdfium_file")
+          languages=(eng rus fas chi_sim)
           for model in fast best; do
             if [[ "$model" == "fast" ]]; then commit="$TESSDATA_FAST_COMMIT"; else commit="$TESSDATA_BEST_COMMIT"; fi
             [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
-            curl -fsSL "https://raw.githubusercontent.com/tesseract-ocr/tessdata_${model}/$commit/eng.traineddata" -o "$package/tessdata/$model/eng.traineddata"
+            for language in "${languages[@]}"; do
+              curl -fsSL "https://raw.githubusercontent.com/tesseract-ocr/tessdata_${model}/$commit/$language.traineddata" -o "$package/tessdata/$model/$language.traineddata"
+            done
             curl -fsSL "https://raw.githubusercontent.com/tesseract-ocr/tessdata_${model}/$commit/LICENSE" -o "$package/tessdata/$model/LICENSE"
             printf '%s\n' "$commit" > "$package/tessdata/$model/UPSTREAM_COMMIT"
           done
           cp DEPENDENCIES.md THIRD_PARTY_NOTICES.md "$package/"
           cp resources/run-companion.sh resources/run-companion.bat "$package/"
           chmod +x "$package/run-companion.sh"
-          printf 'GlyphMend Companion %s (%s)\n\nUNSIGNED PORTABLE BUILD: This package is not code-signed or notarized. Windows SmartScreen or macOS Gatekeeper may warn or block launch. Verify the matching release checksum before running.\n\nRun run-companion.sh on macOS/Linux or run-companion.bat on Windows. Both English OCR model sets are bundled. The companion binds only to loopback and opens the matching GlyphMend browser page for user-initiated pairing. Linux packages were built on Ubuntu 24.04 and require a compatible glibc.\n' "$VERSION" "$PLATFORM" > "$package/README.txt"
-          printf '{"version":"%s","platform":"%s","target":"%s","distribution":"unsigned-portable","codeSigning":"none","pdfiumRelease":"chromium/8066","pdfiumArchive":"%s","pdfiumArchiveSha256":"%s","pdfiumSha256":"%s","ocrModels":{"fast":{"commit":"%s","sha256":"%s"},"best":{"commit":"%s","sha256":"%s"}}}\n' "$VERSION" "$PLATFORM" "$TARGET" "$PDFIUM_ASSET" "$pdfium_archive_hash" "$pdfium_hash" "$(cat "$package/tessdata/fast/UPSTREAM_COMMIT")" "$(file_hash "$package/tessdata/fast/eng.traineddata")" "$(cat "$package/tessdata/best/UPSTREAM_COMMIT")" "$(file_hash "$package/tessdata/best/eng.traineddata")" > "$package/runtime-manifest.json"
+          printf 'GlyphMend Companion %s (%s)\n\nUNSIGNED PORTABLE BUILD: This package is not code-signed or notarized. Windows SmartScreen or macOS Gatekeeper may warn or block launch. Verify the matching release checksum before running.\n\nRun run-companion.sh on macOS/Linux or run-companion.bat on Windows. Fast and high-accuracy OCR models for English, Russian, Persian, and Simplified Chinese are bundled. The companion binds only to loopback and opens the matching GlyphMend browser page for user-initiated pairing. Linux packages were built on Ubuntu 24.04 and require a compatible glibc.\n' "$VERSION" "$PLATFORM" > "$package/README.txt"
+          ocr_models_json="{"
+          first_language=true
+          for language in "${languages[@]}"; do
+            if [[ "$first_language" == "true" ]]; then first_language=false; else ocr_models_json+=","; fi
+            fast_hash=$(file_hash "$package/tessdata/fast/$language.traineddata")
+            best_hash=$(file_hash "$package/tessdata/best/$language.traineddata")
+            printf -v model_record '{"fast":{"commit":"%s","sha256":"%s"},"best":{"commit":"%s","sha256":"%s"}}' \
+              "$(cat "$package/tessdata/fast/UPSTREAM_COMMIT")" "$fast_hash" \
+              "$(cat "$package/tessdata/best/UPSTREAM_COMMIT")" "$best_hash"
+            ocr_models_json+="\"$language\":$model_record"
+          done
+          ocr_models_json+="}"
+          printf '{"version":"%s","platform":"%s","target":"%s","distribution":"unsigned-portable","codeSigning":"none","pdfiumRelease":"chromium/8066","pdfiumArchive":"%s","pdfiumArchiveSha256":"%s","pdfiumSha256":"%s","ocrModels":%s}\n' \
+            "$VERSION" "$PLATFORM" "$TARGET" "$PDFIUM_ASSET" "$pdfium_archive_hash" "$pdfium_hash" "$ocr_models_json" > "$package/runtime-manifest.json"
           echo "package=$package" >> "$GITHUB_OUTPUT"
       - name: Create SPDX SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2

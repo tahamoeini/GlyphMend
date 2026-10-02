@@ -93,13 +93,13 @@ const translations = {
   "Normalize task lists": "规范任务列表",
   Visuals: "图像",
   "Preserve visual content": "保留图像内容",
-  "Keep figures and formula fallbacks": "保留插图和公式替代内容",
+  "Keep figures and review crops": "保留插图和待检查的图像裁剪",
   "Keep unresolved visuals": "保留未识别的图像",
   "Keep source page markers": "保留源页面标记",
   Math: "数学公式",
-  "Extract equations": "提取公式",
-  "Prefer editable math; preserve source when uncertain":
-    "优先使用可编辑公式；不确定时保留原始内容",
+  "Extract editable formulas": "提取可编辑公式",
+  "Export LaTeX and Word math; keep source crops when recognition is uncertain":
+    "导出 LaTeX 和 Word 数学公式；识别不确定时保留源图像裁剪",
   OCR: "OCR 文字识别",
   "Use OCR when needed": "需要时使用 OCR",
   "Read pages without usable embedded text": "识别不含可用内嵌文本的页面",
@@ -107,6 +107,9 @@ const translations = {
   "Apply OCR to every selected page": "对所有选中页面使用 OCR",
   "OCR language": "OCR 语言",
   "English (bundled)": "英语（内置）",
+  "Russian (bundled)": "俄语（内置）",
+  "Persian (bundled)": "波斯语（内置）",
+  "Simplified Chinese (bundled)": "简体中文（内置）",
   "Render DPI": "渲染分辨率（DPI）",
   Processing: "处理",
   "PDF password": "PDF 密码",
@@ -117,8 +120,12 @@ const translations = {
   "Pages per processing batch": "每个处理批次的页数",
   "Strict mode": "严格模式",
   "Stop on the first page error": "遇到第一页错误时停止",
-  "MuPDF WebAssembly and the bundled English OCR model run locally. Bounded batches release memory between checkpoints.":
-    "MuPDF WebAssembly 和内置英语 OCR 模型均在本地运行。分批处理可在检查点之间释放内存。",
+  "MuPDF WebAssembly and the selected local OCR model run on your device. English, Russian, Persian, and Simplified Chinese models are bundled.":
+    "MuPDF WebAssembly 和所选本地 OCR 模型均在设备上运行。内置英语、俄语、波斯语和简体中文模型。",
+  "Uses the selected OCR language when Companion is selected.":
+    "选择 Companion 时使用所选 OCR 语言。",
+  "Browser extraction remains the complete, install-free default. The optional Companion uses local PDFium and the selected Tesseract OCR language. Both feed the same Semantic Document IR and exports.":
+    "浏览器提取仍是完整且无需安装的默认选项。可选 Companion 使用本地 PDFium 和所选 Tesseract OCR 语言。两种方式都生成相同的 Semantic Document IR 和导出内容。",
   "Workspace data": "工作区数据",
   "Checkpoint controls": "检查点控制",
   "Export checkpoint": "导出检查点",

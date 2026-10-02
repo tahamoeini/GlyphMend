@@ -12,7 +12,7 @@ The browser can complete an extraction without a Companion. Connection denial, u
 PDF bytes in browser
   → selected engine for this job
       ├─ Browser: MuPDF WASM + browser OCR
-      └─ Companion: loopback API → PDFium + English Tesseract OCR
+      └─ Companion: loopback API → PDFium + multilingual Tesseract OCR
   → validate Semantic Document IR v2
   → browser checkpoint and review state
   → shared Markdown renderer
@@ -40,7 +40,7 @@ research/archive/          Archived research
 
 ## Rust Companion
 
-The Rust workspace contains the loopback bridge, bounded job service, shared protocol contracts, and portable executable. PDFium calls are serialized through the thread-safe binding. OCR and semantic work are bounded and can run concurrently. The Companion uses bundled English Fast and Best Tesseract data in release packages.
+The Rust workspace contains the loopback bridge, bounded job service, shared protocol contracts, and portable executable. PDFium calls are serialized through the thread-safe binding. OCR and semantic work are bounded and can run concurrently. The Companion release packages bundle Fast and Best Tesseract data for English, Russian, Persian, and Simplified Chinese.
 
 The connection is user initiated and bound to an exact web origin and a one-use pairing code. Endpoints are loopback-only, session authenticated, size limited, and time bounded. See [the Companion API guide](companion-engine.md).
 

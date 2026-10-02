@@ -12,6 +12,8 @@
       "items": { "type": "integer", "minimum": 1, "maximum": 2000 }
     },
     "ocrAccuracy": { "enum": ["fast", "high-accuracy"] },
+    "ocrLanguage": { "enum": ["eng", "rus", "fas", "chi_sim"], "default": "eng" },
+    "extractEquations": { "type": "boolean", "default": true },
     "useOcr": { "type": "boolean", "default": true },
     "forceOcr": { "type": "boolean", "default": false },
     "password": { "type": "string", "maxLength": 4096 }

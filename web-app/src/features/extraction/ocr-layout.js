@@ -151,23 +151,32 @@ function isExcluded(line, ranges) {
   });
 }
 
-export function ocrLines(data) {
+export function ocrLines(data, language = "eng") {
+  const rightToLeft = language === "fas";
   const structuredLines = flattenLines(data?.blocks)
     .map((line) => ({
       text: lineText(line),
       ...lineBox(line),
-      confidence: Number.isFinite(Number(line?.confidence))
+      confidence: line?.confidence != null && Number.isFinite(Number(line.confidence))
         ? Number(line.confidence)
         : null,
+      words: (line?.words || []).map((word) => ({
+        text: lineText(word),
+        ...lineBox(word),
+        confidence: word?.confidence != null && Number.isFinite(Number(word.confidence))
+          ? Number(word.confidence)
+          : null,
+      })).filter((word) => word.text),
     }))
     .filter((line) => line.text);
   return (structuredLines.length ? structuredLines : fallbackLines(data?.text))
     .filter((line) => line.text)
-    .sort((left, right) => left.y0 - right.y0 || left.x0 - right.x0);
+    .sort((left, right) => left.y0 - right.y0 || (rightToLeft ? right.x0 - left.x0 : left.x0 - right.x0))
+    .map((line, index) => ({ ...line, index }));
 }
 
 export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
-  const allLines = ocrLines(data);
+  const allLines = ocrLines(data, options.language);
   if (!allLines.length) return [];
   const lines = allLines.filter((line) => !isExcluded(line, options.excludeRanges));
   if (!lines.length) return [];
@@ -207,10 +216,21 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
   const entries = [];
   let paragraph = [];
 
+  const confidenceFor = (lines) => {
+    const available = lines.map((line) => line.confidence).filter(Number.isFinite);
+    return available.length
+      ? available.reduce((sum, value) => sum + value, 0) / available.length / 100
+      : null;
+  };
+
   const flushParagraph = () => {
     if (!paragraph.length) return;
     const text = joinLines(paragraph);
     const withMath = inlineMathMarkdown(text);
+    const rawText = joinLines(paragraph.map((line) => ({
+      ...line,
+      text: line.rawText ?? line.text,
+    })));
     const first = paragraph[0];
     const last = paragraph.at(-1);
     entries.push({
@@ -222,12 +242,12 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
         mapX(Math.max(...paragraph.map((line) => line.x1))),
         mapY(last.y1),
       ],
-      markdown:
-        withMath === text
-          ? escapeOcr(text, escapeMarkdown)
-          : escapeMarkdown(withMath),
+      markdown: withMath === text
+        ? escapeOcr(text, escapeMarkdown)
+        : escapeMarkdown(withMath),
       kind: "text",
-      rawText: text,
+      rawText,
+      confidence: confidenceFor(paragraph),
     });
     paragraph = [];
   };
@@ -240,6 +260,7 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
       flushParagraph();
       if (equation.emit !== false && !equation.emitted) {
         equation.emitted = true;
+        const accepted = equation.accepted ?? !equation.fallbackMarker;
         entries.push({
           y: mapY(equation.y0),
           x: mapX(equation.x0 ?? minX),
@@ -249,14 +270,20 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
             mapX(equation.x1 ?? maxX),
             mapY(equation.y1),
           ],
-          kind: equation.fallbackMarker ? "equation-fallback" : "equation",
-          markdown:
-            equation.fallbackMarker || `$$\n${equation.latex}\n$$`,
+          kind: accepted ? "equation" : "equation-fallback",
+          markdown: accepted
+            ? [equation.markdown, equation.sourceMarker].filter(Boolean).join("\n\n")
+            : [equation.markdown || equation.fallbackMarker, equation.sourceMarker]
+              .filter(Boolean)
+              .join("\n\n"),
+          confidence: equation.confidence ?? null,
+          extractionMethod: equation.extractionMethod || "tesseract-equation-reconstruction",
           ...(equation.equationIR ? { equationIR: equation.equationIR, mode: equation.equationIR.mode } : {}),
         });
       }
       continue;
     }
+    const textLine = line;
     const allowShortHeading = hasShortHeadingEvidence(
       line,
       allLines,
@@ -264,23 +291,24 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
       minX,
       maxX,
     );
-    const level = headingLevel(line.text, allowShortHeading);
+    const level = headingLevel(textLine.text, allowShortHeading);
     const previous = paragraph.at(-1);
-    const numberedList = /^\d+[.)]\s+\S/.test(line.text) && !level;
+    const numberedList = /^\d+[.)]\s+\S/.test(textLine.text) && !level;
     const suppressTocHeading =
-      tocLike && /^\d+(?:\.\d+){0,5}\.?\s+.+\s+\d{1,4}$/.test(line.text);
+      tocLike && /^\d+(?:\.\d+){0,5}\.?\s+.+\s+\d{1,4}$/.test(textLine.text);
 
     if (level && !suppressTocHeading) {
       flushParagraph();
       entries.push({
-        y: mapY(line.y0),
-        x: mapX(line.x0),
-        bbox: [mapX(line.x0), mapY(line.y0), mapX(line.x1), mapY(line.y1)],
-        markdown: `${"#".repeat(level)} ${escapeOcr(line.text, escapeMarkdown, {
+        y: mapY(textLine.y0),
+        x: mapX(textLine.x0),
+        bbox: [mapX(textLine.x0), mapY(textLine.y0), mapX(textLine.x1), mapY(textLine.y1)],
+        markdown: `${"#".repeat(level)} ${escapeOcr(textLine.text, escapeMarkdown, {
           protectBlockStart: false,
         })}`,
         kind: "text",
-        rawText: line.text,
+        rawText: textLine.rawText ?? textLine.text,
+        confidence: confidenceFor([line]),
       });
       continue;
     }
@@ -289,14 +317,14 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
 
     const first = paragraph[0];
     const columnShift =
-      first && Math.abs(line.x0 - first.x0) > Math.max(medianHeight * 3, measuredWidth * 0.16);
+      first && Math.abs(textLine.x0 - first.x0) > Math.max(medianHeight * 3, measuredWidth * 0.16);
     if (
       previous &&
-      (line.y0 - previous.y1 > medianHeight * 0.9 || columnShift)
+      (textLine.y0 - previous.y1 > medianHeight * 0.9 || columnShift)
     )
       flushParagraph();
 
-    paragraph.push(line);
+    paragraph.push(textLine);
   }
   flushParagraph();
   return entries;
