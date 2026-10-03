@@ -32,9 +32,15 @@ function fallbackLines(text = "") {
   }));
 }
 
-function lineIsRightToLeft(line, language) {
-  const rtlCount = (line.text.match(/\p{Script=Arabic}/gu) || []).length;
-  const ltrCount = (line.text.match(/\p{Script=Latin}/gu) || []).length;
+function rowIsRightToLeft(lines, language) {
+  const rtlCount = lines.reduce(
+    (count, line) => count + (line.text.match(/\p{Script=Arabic}/gu) || []).length,
+    0,
+  );
+  const ltrCount = lines.reduce(
+    (count, line) => count + (line.text.match(/\p{Script=Latin}/gu) || []).length,
+    0,
+  );
   if (rtlCount !== ltrCount) return rtlCount > ltrCount;
   return language === "fas";
 }
@@ -56,9 +62,7 @@ function sortReadingOrder(lines, language) {
   }
 
   return rows.flatMap((row) => {
-    const rtlCount = row.lines.filter((line) => lineIsRightToLeft(line, language)).length;
-    const rightToLeft = rtlCount > row.lines.length / 2
-      || (rtlCount === row.lines.length / 2 && language === "fas");
+    const rightToLeft = rowIsRightToLeft(row.lines, language);
     return row.lines.sort((left, right) => rightToLeft
       ? right.x0 - left.x0
       : left.x0 - right.x0);
@@ -169,6 +173,12 @@ function escapeOcr(text, escapeMarkdown, options = {}) {
   // OCR is not a mathematical parser. In particular, isolated dollar signs can
   // otherwise turn OCR noise into Markdown display-math delimiters.
   return escapeMarkdown(text, options).replace(/\$/g, "\\$");
+}
+
+function equationMarkdown(equation) {
+  if (equation.markdown) return equation.markdown;
+  if (equation.latex) return `$$\n${equation.latex}\n$$`;
+  return "";
 }
 
 function looksLikeContents(lines) {
@@ -311,8 +321,8 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
           ],
           kind: accepted ? "equation" : "equation-fallback",
           markdown: accepted
-            ? [equation.markdown, equation.sourceMarker].filter(Boolean).join("\n\n")
-            : equation.sourceMarker || equation.fallbackMarker || equation.markdown || "",
+            ? [equationMarkdown(equation), equation.sourceMarker].filter(Boolean).join("\n\n")
+            : equation.sourceMarker || equation.fallbackMarker || equation.markdown || equation.latex || "",
           confidence: equation.confidence ?? null,
           extractionMethod: equation.extractionMethod || "tesseract-equation-reconstruction",
           ...(equation.equationIR ? { equationIR: equation.equationIR, mode: equation.equationIR.mode } : {}),
@@ -330,7 +340,7 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
     );
     const level = headingLevel(textLine.text, allowShortHeading);
     const previous = paragraph.at(-1);
-    const numberedList = /^\d+[.)]\s+\S/.test(textLine.text) && !level;
+    const numberedList = /^\p{Nd}+\s*[\p{Pd}.)]\s+\S/u.test(textLine.text) && !level;
     const suppressTocHeading =
       tocLike && /^\d+(?:\.\d+){0,5}\.?\s+.+\s+\d{1,4}$/.test(textLine.text);
 
