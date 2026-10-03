@@ -32,9 +32,15 @@ function fallbackLines(text = "") {
   }));
 }
 
-function lineIsRightToLeft(line, language) {
-  const rtlCount = (line.text.match(/\p{Script=Arabic}/gu) || []).length;
-  const ltrCount = (line.text.match(/\p{Script=Latin}/gu) || []).length;
+function rowIsRightToLeft(lines, language) {
+  const rtlCount = lines.reduce(
+    (count, line) => count + (line.text.match(/\p{Script=Arabic}/gu) || []).length,
+    0,
+  );
+  const ltrCount = lines.reduce(
+    (count, line) => count + (line.text.match(/\p{Script=Latin}/gu) || []).length,
+    0,
+  );
   if (rtlCount !== ltrCount) return rtlCount > ltrCount;
   return language === "fas";
 }
@@ -56,9 +62,7 @@ function sortReadingOrder(lines, language) {
   }
 
   return rows.flatMap((row) => {
-    const rtlCount = row.lines.filter((line) => lineIsRightToLeft(line, language)).length;
-    const rightToLeft = rtlCount > row.lines.length / 2
-      || (rtlCount === row.lines.length / 2 && language === "fas");
+    const rightToLeft = rowIsRightToLeft(row.lines, language);
     return row.lines.sort((left, right) => rightToLeft
       ? right.x0 - left.x0
       : left.x0 - right.x0);
@@ -330,7 +334,7 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
     );
     const level = headingLevel(textLine.text, allowShortHeading);
     const previous = paragraph.at(-1);
-    const numberedList = /^\d+[.)]\s+\S/.test(textLine.text) && !level;
+    const numberedList = /^\p{Nd}+\s*[\p{Pd}.)]\s+\S/u.test(textLine.text) && !level;
     const suppressTocHeading =
       tocLike && /^\d+(?:\.\d+){0,5}\.?\s+.+\s+\d{1,4}$/.test(textLine.text);
 
