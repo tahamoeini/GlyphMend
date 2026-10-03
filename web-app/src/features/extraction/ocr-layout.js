@@ -312,9 +312,7 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
           kind: accepted ? "equation" : "equation-fallback",
           markdown: accepted
             ? [equation.markdown, equation.sourceMarker].filter(Boolean).join("\n\n")
-            : [equation.markdown || equation.fallbackMarker, equation.sourceMarker]
-              .filter(Boolean)
-              .join("\n\n"),
+            : equation.sourceMarker || equation.fallbackMarker || equation.markdown || "",
           confidence: equation.confidence ?? null,
           extractionMethod: equation.extractionMethod || "tesseract-equation-reconstruction",
           ...(equation.equationIR ? { equationIR: equation.equationIR, mode: equation.equationIR.mode } : {}),
