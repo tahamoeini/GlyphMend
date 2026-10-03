@@ -185,7 +185,7 @@ export function validateJobCreate(request) {
       || value.selectedPages.some((page) => !Number.isInteger(page) || page < 1 || page > request.pageCount)
       || new Set(value.selectedPages).size !== value.selectedPages.length
       || !["fast", "high-accuracy"].includes(value.ocrAccuracy)
-      || (value.ocrLanguage !== undefined && !["eng", "rus", "fas", "chi_sim"].includes(value.ocrLanguage))
+      || (value.ocrLanguage !== undefined && !["eng", "eng+fas", "rus", "fas", "chi_sim"].includes(value.ocrLanguage))
       || (value.useOcr !== undefined && typeof value.useOcr !== "boolean")
       || (value.forceOcr !== undefined && typeof value.forceOcr !== "boolean")
       || (value.password !== undefined && (typeof value.password !== "string" || utf8Length(value.password) > 4096))) {

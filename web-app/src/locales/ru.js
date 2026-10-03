@@ -113,6 +113,7 @@ const translations = {
     "Применять OCR ко всем выбранным страницам",
   "OCR language": "Язык OCR",
   "English (bundled)": "Английский (в комплекте)",
+  "English + Persian (mixed, bundled)": "Английский + персидский (смешанный, в комплекте)",
   "Russian (bundled)": "Русский (в комплекте)",
   "Persian (bundled)": "Персидский (в комплекте)",
   "Simplified Chinese (bundled)": "Упрощённый китайский (в комплекте)",

@@ -102,6 +102,7 @@ const messages = [
   "Apply OCR to every selected page",
   "OCR language",
   "English (bundled)",
+  "English + Persian (mixed, bundled)",
   "Russian (bundled)",
   "Persian (bundled)",
   "Simplified Chinese (bundled)",
