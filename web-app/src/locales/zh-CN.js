@@ -107,6 +107,7 @@ const translations = {
   "Apply OCR to every selected page": "对所有选中页面使用 OCR",
   "OCR language": "OCR 语言",
   "English (bundled)": "英语（内置）",
+  "English + Persian (mixed, bundled)": "英语 + 波斯语（混合，内置）",
   "Russian (bundled)": "俄语（内置）",
   "Persian (bundled)": "波斯语（内置）",
   "Simplified Chinese (bundled)": "简体中文（内置）",

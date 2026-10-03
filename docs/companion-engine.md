@@ -2,7 +2,7 @@
 
 The Rust Companion is an optional local PDF extraction engine. Users download and start it, connect from the browser, and select it for an individual job. The browser engine remains the default and is available without a Companion.
 
-The Companion uses PDFium for native PDF text, page geometry, page objects, and rendering. Tesseract OCR supports English, Russian, Persian, and Simplified Chinese. Select the document's primary OCR language in the browser; the Companion offers Fast (default) and High Accuracy model sets for each language. The Tesseract project documents the speed/accuracy tradeoff between these model sets in its [data-file guide](https://github.com/tesseract-ocr/tessdoc/blob/main/Data-Files.md).
+The Companion uses PDFium for native PDF text, page geometry, page objects, and rendering. Tesseract OCR supports English, Russian, Persian, Simplified Chinese, and a bundled English/Persian pair for mixed scans. Select the OCR language in the browser; the Companion offers Fast (default) and High Accuracy model sets. The paired model can take longer and use more memory than a single language. The Tesseract project documents the speed/accuracy tradeoff between model sets in its [data-file guide](https://github.com/tesseract-ocr/tessdoc/blob/main/Data-Files.md).
 
 ## User initiated loopback connection
 
@@ -25,7 +25,7 @@ POST /v1/jobs/:id/result/acknowledge
 POST /v1/jobs/:id/cancel
 ```
 
-Document extraction uses the `glyphmend.document.extract.v2` capability, `inputKind=document`, PDF bytes uploaded in bounded chunks, and metadata such as `ocrAccuracy: "fast" | "high-accuracy"`, `ocrLanguage: "eng" | "rus" | "fas" | "chi_sim"`, `extractEquations`, and selected page numbers. Protocol v1.4 adds the optional equation setting; the browser omits it when communicating with older v1 companions. Input is identified by its digest, not by a caller-supplied path or URL. Capability discovery reports engine version, supported IR version, and available OCR choices.
+Document extraction uses the `glyphmend.document.extract.v2` capability, `inputKind=document`, PDF bytes uploaded in bounded chunks, and metadata such as `ocrAccuracy: "fast" | "high-accuracy"`, `ocrLanguage: "eng" | "eng+fas" | "rus" | "fas" | "chi_sim"`, `extractEquations`, and selected page numbers. Protocol v1.4 adds the optional equation setting; the browser omits it when communicating with older v1 companions. Input is identified by its digest, not by a caller-supplied path or URL. Capability discovery reports engine version, supported IR version, and available OCR choices.
 
 Results are Semantic Document IR v2 and contain per-page source geometry, text and PDFium object bounds, engine/version metadata, OCR status, and fallback details. When enabled, formula-like native or OCR text is emitted as editable LaTeX math with a review diagnostic that points back to the source PDF page. The browser validates the IR before updating checkpoints, then uses the existing shared Markdown and DOCX exporters. The Companion cannot replace the browser's export implementation.
 

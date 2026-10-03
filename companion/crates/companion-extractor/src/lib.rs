@@ -147,7 +147,7 @@ fn extract_document(
     };
     let model_hash = tessdata
         .as_ref()
-        .map(|path| sha256_file(&path.join(format!("{}.traineddata", options.ocr_language))))
+        .map(|path| sha256_models(path, &options.ocr_language))
         .transpose()?;
     let completed = Arc::new(AtomicU32::new(0));
     let total_pages = options.selected_pages.len() as u32;
@@ -486,12 +486,41 @@ fn resolve_tessdata(accuracy: &companion_contract::OcrAccuracy, language: &str) 
         })
         .ok_or_else(|| anyhow!("could not locate Companion model directory"))?;
     let path = root.join(model_set);
-    if !path.join(format!("{language}.traineddata")).is_file() {
-        return Err(anyhow!(
-            "bundled {language} {model_set} OCR model is missing"
-        ));
+    for model in model_languages(language)? {
+        if !path.join(format!("{model}.traineddata")).is_file() {
+            return Err(anyhow!("bundled {model} {model_set} OCR model is missing"));
+        }
     }
     Ok(path)
+}
+
+fn model_languages(language: &str) -> Result<&'static [&'static str]> {
+    match language {
+        "eng" => Ok(&["eng"]),
+        "eng+fas" => Ok(&["eng", "fas"]),
+        "rus" => Ok(&["rus"]),
+        "fas" => Ok(&["fas"]),
+        "chi_sim" => Ok(&["chi_sim"]),
+        _ => Err(anyhow!("unsupported OCR language combination")),
+    }
+}
+
+fn sha256_models(tessdata: &Path, language: &str) -> Result<String> {
+    let models = model_languages(language)?;
+    if models.len() == 1 {
+        return sha256_file(&tessdata.join(format!("{}.traineddata", models[0])));
+    }
+
+    let mut digest = Sha256::new();
+    for model in models {
+        digest.update(model.as_bytes());
+        digest.update([0]);
+        let path = tessdata.join(format!("{model}.traineddata"));
+        let bytes = fs::read(&path)
+            .with_context(|| format!("could not read OCR model {}", path.display()))?;
+        digest.update(bytes);
+    }
+    Ok(hex::encode(digest.finalize()))
 }
 
 fn sha256_file(path: &Path) -> Result<String> {

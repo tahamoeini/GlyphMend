@@ -269,7 +269,7 @@ impl DocumentExtractionOptions {
                 .selected_pages
                 .iter()
                 .any(|page| *page == 0 || *page > page_count)
-            || !["eng", "rus", "fas", "chi_sim"].contains(&self.ocr_language.as_str())
+            || !["eng", "eng+fas", "rus", "fas", "chi_sim"].contains(&self.ocr_language.as_str())
             || self
                 .password
                 .as_ref()

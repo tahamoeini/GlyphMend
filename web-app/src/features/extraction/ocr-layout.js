@@ -32,16 +32,49 @@ function fallbackLines(text = "") {
   }));
 }
 
+function lineIsRightToLeft(line, language) {
+  const rtlCount = (line.text.match(/\p{Script=Arabic}/gu) || []).length;
+  const ltrCount = (line.text.match(/\p{Script=Latin}/gu) || []).length;
+  if (rtlCount !== ltrCount) return rtlCount > ltrCount;
+  return language === "fas";
+}
+
+function sortReadingOrder(lines, language) {
+  const rows = [];
+  const byHeight = [...lines].sort((left, right) => left.y0 - right.y0 || left.x0 - right.x0);
+  for (const line of byHeight) {
+    const row = rows.at(-1);
+    const height = Math.max(1, line.y1 - line.y0);
+    const rowHeight = row ? row.height : 0;
+    const sameRow = row && Math.abs(line.y0 - row.y0) <= Math.max(height, rowHeight) * 0.35;
+    if (sameRow) {
+      row.lines.push(line);
+      row.height = Math.max(row.height, height);
+    } else {
+      rows.push({ y0: line.y0, height, lines: [line] });
+    }
+  }
+
+  return rows.flatMap((row) => {
+    const rtlCount = row.lines.filter((line) => lineIsRightToLeft(line, language)).length;
+    const rightToLeft = rtlCount > row.lines.length / 2
+      || (rtlCount === row.lines.length / 2 && language === "fas");
+    return row.lines.sort((left, right) => rightToLeft
+      ? right.x0 - left.x0
+      : left.x0 - right.x0);
+  });
+}
+
 function upperRatio(text) {
-  const letters = [...text].filter((character) => /\p{L}/u.test(character));
+  const letters = [...text].filter((character) => /\p{Lu}|\p{Ll}/u.test(character));
+  if (!letters.length) return 0;
   return (
-    letters.filter((character) => character === character.toUpperCase()).length /
-    Math.max(1, letters.length)
+    letters.filter((character) => /\p{Lu}/u.test(character)).length / letters.length
   );
 }
 
 function isShortAllCaps(text) {
-  return /^(?:[A-Z]\.){2,}$|^[A-Z]{1,3}\.?$/.test(text);
+  return /^(?:[A-Z]\.){2,}$|^[A-Z]{2,3}\.?$/.test(text);
 }
 
 function hasShortHeadingEvidence(line, lines, medianHeight, minX, maxX) {
@@ -103,10 +136,17 @@ function headingLevel(text, allowShort = false) {
   if (/^(?:chapter|appendix)\s+(?:\d+|[ivxlcdm]+)\b/i.test(text)) return 1;
   if (/^(?:contents|list of (?:figures|tables)|preface|references|index)$/i.test(text))
     return 1;
+  if (/[=<>≤≥≠≈+\-−×÷√∑∫∏∞∈∪∩^_]/u.test(text)
+    || text.includes("/") || text.includes("\\")) return null;
   // Preserve the conservative 4f86 behavior for text-only OCR. Very short
   // all-caps fragments become headings only when real OCR geometry supports it.
   if (isShortAllCaps(text)) return allowShort ? 1 : null;
-  return text.length <= 90 && text.split(/\s+/).length <= 14 && upperRatio(text) > 0.82
+  const words = text.match(/\p{L}+/gu) || [];
+  const letterCount = [...text].filter((character) => /\p{L}/u.test(character)).length;
+  const letterDensity = letterCount / Math.max(1, [...text].length);
+  const singleWordHeading = words.length !== 1 || words[0].length >= 7;
+  return text.length <= 90 && words.length <= 14 && letterDensity >= 0.55
+    && singleWordHeading && upperRatio(text) > 0.82
     ? 1
     : null;
 }
@@ -152,7 +192,6 @@ function isExcluded(line, ranges) {
 }
 
 export function ocrLines(data, language = "eng") {
-  const rightToLeft = language === "fas";
   const structuredLines = flattenLines(data?.blocks)
     .map((line) => ({
       text: lineText(line),
@@ -169,9 +208,9 @@ export function ocrLines(data, language = "eng") {
       })).filter((word) => word.text),
     }))
     .filter((line) => line.text);
-  return (structuredLines.length ? structuredLines : fallbackLines(data?.text))
-    .filter((line) => line.text)
-    .sort((left, right) => left.y0 - right.y0 || (rightToLeft ? right.x0 - left.x0 : left.x0 - right.x0))
+  const lines = (structuredLines.length ? structuredLines : fallbackLines(data?.text))
+    .filter((line) => line.text);
+  return sortReadingOrder(lines, language)
     .map((line, index) => ({ ...line, index }));
 }
 
