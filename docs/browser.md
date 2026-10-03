@@ -17,7 +17,7 @@ See [branding.md](branding.md) for the full configuration contract.
 ## Choosing extraction settings
 
 - Keep **OCR pages without usable text** enabled for scanned documents.
-- Choose the document's language under **OCR language**. Select **English + Persian (mixed)** for scans that contain both; line ordering follows the dominant script in each row. Loading both models takes longer and uses more memory than a single-language run.
+- **English + Persian (mixed)** is the default under **OCR language**, so scans containing both scripts are recognized together; line order follows the dominant script in each row. Choose a single language for single-language documents. The paired model takes longer to load and uses more memory than a single-language run.
 - Leave **Force OCR** off for mixed or digitally generated PDFs; it bypasses native text extraction and is slower.
 - Start with 20 checkpoint pages. Lower it when browser memory is tight; raise it only after a representative run is stable.
 - Keep **strict** off for exploratory runs. It records a skipped page as `needs-review` instead of discarding the rest of the batch.
