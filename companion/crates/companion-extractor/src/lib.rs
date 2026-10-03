@@ -175,20 +175,11 @@ fn extract_document(
                         if cancellation.is_cancelled() {
                             return Err(cancelled());
                         }
-                        if let Some(tiff) = raw.tiff.as_deref() {
+                        if raw.tiff.is_some() {
                             let tessdata = tessdata
                                 .as_deref()
                                 .ok_or_else(|| anyhow!("OCR model path is unavailable"))?;
-                            match recognize_tiff(
-                                tessdata,
-                                tiff,
-                                raw.page_number,
-                                raw.render_width,
-                                raw.render_height,
-                                raw.width,
-                                raw.height,
-                                &options.ocr_language,
-                            ) {
+                            match recognize_tiff(tessdata, &raw, &options.ocr_language) {
                                 Ok((segments, confidence)) => {
                                     raw.ocr_segments = segments;
                                     raw.ocr_confidence = confidence;
@@ -531,12 +522,7 @@ fn sha256_file(path: &Path) -> Result<String> {
 
 fn recognize_tiff(
     tessdata: &Path,
-    tiff: &[u8],
-    page_number: u32,
-    render_width: u32,
-    render_height: u32,
-    page_width: f64,
-    page_height: f64,
+    page: &RawPage,
     language: &str,
 ) -> Result<(Vec<TextSegment>, Option<f64>)> {
     let data_path = tessdata
@@ -544,6 +530,10 @@ fn recognize_tiff(
         .ok_or_else(|| anyhow!("OCR model path is not valid UTF-8"))?;
     let mut tesseract = leptess::LepTess::new(Some(data_path), language)
         .map_err(|error| anyhow!("could not initialize {language} OCR: {error}"))?;
+    let tiff = page
+        .tiff
+        .as_deref()
+        .context("rendered page TIFF is unavailable")?;
     tesseract
         .set_image_from_mem(tiff)
         .context("Tesseract could not read the rendered page")?;
@@ -551,8 +541,8 @@ fn recognize_tiff(
     let tsv = tesseract
         .get_tsv_text(0)
         .context("Tesseract could not return OCR text")?;
-    let x_scale = page_width / f64::from(render_width.max(1));
-    let y_scale = page_height / f64::from(render_height.max(1));
+    let x_scale = page.width / f64::from(page.render_width.max(1));
+    let y_scale = page.height / f64::from(page.render_height.max(1));
     let mut lines: BTreeMap<(u32, u32, u32), OcrLine> = BTreeMap::new();
     for row in tsv.lines().skip(1) {
         let fields = row.splitn(12, '\t').collect::<Vec<_>>();
@@ -600,7 +590,7 @@ fn recognize_tiff(
             ],
             source_kind: "ocr-text",
             confidence: Some(mean.clamp(0.0, 1.0)),
-            id: format!("tesseract-line-{page_number}-{index}"),
+            id: format!("tesseract-line-{}-{index}", page.page_number),
         });
     }
     let mean = (!all_confidence.is_empty())

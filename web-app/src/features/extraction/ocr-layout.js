@@ -175,6 +175,12 @@ function escapeOcr(text, escapeMarkdown, options = {}) {
   return escapeMarkdown(text, options).replace(/\$/g, "\\$");
 }
 
+function equationMarkdown(equation) {
+  if (equation.markdown) return equation.markdown;
+  if (equation.latex) return `$$\n${equation.latex}\n$$`;
+  return "";
+}
+
 function looksLikeContents(lines) {
   const entries = lines.filter((line) =>
     /^\d+(?:\.\d+){0,5}\.?\s+.+\s+\d{1,4}$/.test(line.text),
@@ -315,8 +321,8 @@ export function ocrMarkdownEntries(data, escapeMarkdown, options = {}) {
           ],
           kind: accepted ? "equation" : "equation-fallback",
           markdown: accepted
-            ? [equation.markdown, equation.sourceMarker].filter(Boolean).join("\n\n")
-            : equation.sourceMarker || equation.fallbackMarker || equation.markdown || "",
+            ? [equationMarkdown(equation), equation.sourceMarker].filter(Boolean).join("\n\n")
+            : equation.sourceMarker || equation.fallbackMarker || equation.markdown || equation.latex || "",
           confidence: equation.confidence ?? null,
           extractionMethod: equation.extractionMethod || "tesseract-equation-reconstruction",
           ...(equation.equationIR ? { equationIR: equation.equationIR, mode: equation.equationIR.mode } : {}),
