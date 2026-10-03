@@ -1368,6 +1368,14 @@ function sourceMarker(pageNumber, asset) {
   return `[SOURCE_VISUAL page=${pageNumber} id="${asset.id}" kind="${asset.kind}" bbox="${box}"${caption}]`;
 }
 
+function validatedEquationMarkdown(validation, fallbackLatex = "") {
+  if (!validation?.accepted) return "";
+  const structured = equationToMarkdown(validation.output.equationIR);
+  if (structured) return structured;
+  const latex = String(validation.output.latex || fallbackLatex || "").trim();
+  return latex ? `${DISPLAY_MATH}\n${latex}\n${DISPLAY_MATH}` : "";
+}
+
 function overlapsRegion(left, right, minimumCoverage = 0.72) {
   if (!Array.isArray(left) || !Array.isArray(right) || left.length !== 4 || right.length !== 4)
     return false;
@@ -2103,7 +2111,7 @@ async function ensureOcrWorker(options, paths) {
   return ocrWorker;
 }
 
-async function recognizeRaster(image, options, paths, pageNumber) {
+async function recognizeRaster(image, options, paths, pageNumber, pageSegmentationMode = "6") {
   if (
     !Number.isInteger(pageNumber) ||
     pageNumber < 1 ||
@@ -2116,6 +2124,7 @@ async function recognizeRaster(image, options, paths, pageNumber) {
   ocrProgressPage = pageNumber;
   try {
     const worker = await ensureOcrWorker(options, paths);
+    await worker.setParameters({ tessedit_pageseg_mode: pageSegmentationMode });
     const result = await worker.recognize(image.data, {}, { text: true, blocks: true });
     result.data._rasterWidth = image.width;
     result.data._rasterHeight = image.height;
@@ -2131,7 +2140,9 @@ async function recognizePage(page, options, paths, pageNumber) {
     rect(page.getBounds()),
     Math.max(1, Math.min(600, Number(options.ocrDpi) || 300)) / 72,
   );
-  return recognizeRaster(image, options, paths, pageNumber);
+  // Tesseract.js defaults to SINGLE_BLOCK, unlike the CLI's automatic page
+  // segmentation. Full PDF pages commonly contain multiple text regions.
+  return recognizeRaster(image, options, paths, pageNumber, "3");
 }
 
 async function tableMarkdownForVisual(rendered, caption, options, paths, pageNumber) {
@@ -2380,8 +2391,7 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
       validatedEquationRanges.push({
         ...group,
         latex: validation.output.latex || equationText,
-        markdown: equationToMarkdown(validation.output.equationIR)
-          || (DISPLAY_MATH + "\n" + (validation.output.latex || equationText) + "\n" + DISPLAY_MATH),
+        markdown: validatedEquationMarkdown(validation, equationText),
         accepted: validation.accepted,
         sourceMarker: reconstruction.sourceMarker,
         fallbackMarker: reconstruction.fallbackMarker,
@@ -2449,17 +2459,14 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
       const { validation, fallbackAsset } = reconstruction;
       if (fallbackAsset) assets.push(fallbackAsset);
       const accepted = validation.accepted;
-      const equationMarkdown = equationToMarkdown(validation.output.equationIR)
-        || (DISPLAY_MATH + "\n" + validation.output.latex + "\n" + DISPLAY_MATH);
+      const equationMarkdown = validatedEquationMarkdown(validation, equationText);
       entries.push({
         y: candidate.y,
         x: candidate.bbox[0],
         bbox: candidate.bbox,
         markdown: accepted
           ? [equationMarkdown, reconstruction.sourceMarker].filter(Boolean).join("\n\n")
-          : [equationMarkdown, reconstruction.sourceMarker || reconstruction.fallbackMarker]
-            .filter(Boolean)
-            .join("\n\n"),
+          : reconstruction.sourceMarker || reconstruction.fallbackMarker || "",
         kind: accepted ? "equation" : "equation-fallback",
         equationIR: validation.output.equationIR,
         mode: validation.output.equationIR?.mode || "display",
@@ -2542,14 +2549,11 @@ export async function pageMarkdown(page, pageNumber, options, ocrPaths) {
       const { validation, fallbackAsset } = reconstruction;
       if (fallbackAsset) assets.push(fallbackAsset);
       equationIR = validation.output.equationIR;
-      const equationMarkdown = equationToMarkdown(equationIR)
-        || (DISPLAY_MATH + "\n" + validation.output.latex + "\n" + DISPLAY_MATH);
+      const equationMarkdown = validatedEquationMarkdown(validation, equationText);
       markdown = [
         validation.accepted
           ? [equationMarkdown, reconstruction.sourceMarker].filter(Boolean).join("\n\n")
-          : [equationMarkdown, reconstruction.sourceMarker || reconstruction.fallbackMarker]
-            .filter(Boolean)
-            .join("\n\n"),
+          : reconstruction.sourceMarker || reconstruction.fallbackMarker || "",
         equationParts?.prose
           ? escapeMd(inlineMathMarkdown(equationParts.prose), { protectBlockStart: false })
           : "",
