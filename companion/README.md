@@ -2,6 +2,8 @@
 
 This directory contains the Rust workspace for the optional standalone Companion and the GlyphMend Desktop host. The standalone Companion exposes a user-paired loopback API. Desktop reuses the Rust service and extraction provider through Tauri IPC; it does not use that API.
 
+The CLI is headless and does not accept a PDF and write Markdown as a standalone command. Use the browser interface with the CLI for paired processing, or install GlyphMend Desktop to use the shared interface with a bundled local engine. The browser/PWA also works on its own.
+
 ## Prerequisites
 
 - Rust 1.97.0, pinned in rust-toolchain.toml.
@@ -10,7 +12,7 @@ This directory contains the Rust workspace for the optional standalone Companion
 - PDFium and the selected Tesseract traineddata at runtime when running the standalone CLI.
 - Tauri/WebView development prerequisites for Desktop; see the [Desktop guide](../docs/desktop.md).
 
-The [dependency record](DEPENDENCIES.md) describes the runtime components. Desktop runtime preparation downloads the pinned PDFium and model files; see [runtime packaging](../docs/desktop.md#native-resources-and-notices).
+The [dependency record](DEPENDENCIES.md) describes the runtime components. A source build of the CLI does not download PDFium or OCR data. PDFium must be beside the executable or discoverable as a system library. Set `GLYPHMEND_TESSDATA_DIR` to a directory containing `fast/` and `best/`, each with the traineddata files for the language selected in the browser. The portable release archive includes these resources and launch scripts. Desktop runtime preparation downloads the pinned PDFium and model files for its current target; see [runtime packaging](../docs/desktop.md#native-resources-and-notices).
 
 ## Build and start the standalone CLI
 

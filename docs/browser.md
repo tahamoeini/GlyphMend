@@ -2,9 +2,9 @@
 
 > **Faithful document reconstruction from PDF to structured Markdown.**
 
-## What stays local
+## Browser-only privacy boundary
 
-The browser edition does not upload the selected PDF or extracted content. Processing uses MuPDF WebAssembly and, when needed, the bundled Tesseract OCR worker. OCR models for English, Russian, Persian, and Simplified Chinese run locally. Resume data is stored in the browser's IndexedDB database; exporting a workspace is an explicit user action.
+In browser-only mode, the selected PDF and extracted content stay in the browser. Processing uses MuPDF WebAssembly and, when needed, the bundled Tesseract OCR worker. OCR models for English, Russian, Persian, and Simplified Chinese run locally. Resume data is stored in the browser's IndexedDB database; exporting a workspace is an explicit user action. If the user pairs the local Companion and selects it for a job, the browser sends that job's PDF bytes to the loopback service; see the [Companion guide](companion-engine.md). No remote extraction service is used.
 
 ## Branding at runtime
 
@@ -59,7 +59,7 @@ complete          → extraction and document-level cleanup finished
 
 ## Deployment checklist
 
-1. From the repository root, run `npm ci` and `npm run build:web`. For manual full validation, also run `npm test`. The build verifies the three copied MuPDF files, checks that the service worker precaches them, and fetches them from a local production preview.
+1. From the repository root, run `npm ci` and `npm run build:web`. To run the browser suite locally, use `npm test`; pull requests and pushes do not run test suites automatically. The build verifies the three copied MuPDF files, checks that the service worker precaches them, and fetches them from a local production preview.
 2. Deploy the contents of `web-app/dist/` over HTTPS.
 3. Verify `branding.json`, the configured logo, MuPDF, OCR, PDF.js WASM, and service-worker assets return HTTP 200.
 4. Test one native-text PDF and one scanned PDF in the target browser. Confirm the MuPDF requests succeed and extraction reaches engine-ready.

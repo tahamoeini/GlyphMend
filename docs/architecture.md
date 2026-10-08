@@ -15,14 +15,14 @@ The frontend keeps one provider contract across three providers: browser-local e
 ## Data flow
 
 ~~~text
-PDF selected in Browser/PWA or Desktop
-  -> selected engine for this job
-        -> Browser provider: MuPDF WebAssembly and bundled browser OCR
-      -> Paired Companion provider: loopback API, PDFium, Tesseract
-      -> Bundled Desktop provider: Tauri IPC, PDFium, Tesseract
+PDF selected in the shared GlyphMend interface
+  -> provider selected for this job
+     -> Browser provider: MuPDF WebAssembly and browser OCR
+     -> Paired Companion provider: loopback API, PDFium, Tesseract
+     -> Bundled Desktop provider: Tauri IPC, PDFium, Tesseract
   -> validate Semantic Document IR v2
-  -> checkpoint in browser storage
-  -> review and source comparison
+  -> checkpoint in the current browser profile
+  -> shared review and source comparison
   -> shared Markdown and DOCX exporters
 ~~~
 
@@ -32,7 +32,7 @@ Browser + Companion transfers PDF bytes only after user-initiated pairing and en
 
 Browser and Desktop use the same frontend persistence code, but their browser profiles are separate. Workspace checkpoints and preferences are stored in the profile's IndexedDB/local storage; Desktop WebView data is kept in the per-user application data directories configured by Tauri. There is no automatic database bridge between a browser profile and Desktop. Users can export a checkpoint and import it into another profile.
 
-The PWA service worker is included in the browser build and omitted from Desktop. Browser and Desktop builds use separate entry points and engine adapters.
+The PWA service worker is included in the browser build and omitted from Desktop. Browser and Desktop builds use separate entry points and engine adapters. Browser-only mode requires no local service. The Companion CLI is a headless loopback service and does not itself provide a PDF-to-Markdown interface; the installed Desktop app is the standalone UI with a bundled engine.
 
 ## Repository layout
 
@@ -49,4 +49,4 @@ research/                  Research plans and design references
 
 ## Verification workflows
 
-`platform-ci.yml` runs lightweight checks on pull requests and pushes to `main`. Its manually selected full-validation mode runs browser, Rust, Tauri, and browser-to-Companion tests plus native compilation checks. Paired benchmarks are another manual mode. `platform-release.yml` builds the browser package, Companion packages, and Desktop installers in parallel, then stages them in one versioned draft release. See [CI/CD and releases](ci.md) and [distribution status](distribution-plan.md).
+`platform-ci.yml` runs lightweight checks on pull requests and pushes to `main`. Its manually selected full-validation mode runs browser, Rust, Tauri, and browser-to-Companion tests plus native compilation checks. The separate manual benchmark mode runs the paired benchmark and its browser quality preflight. `platform-release.yml` is the single release entry point; it calls reusable Companion and Desktop packaging workflows, builds the browser package in parallel, and stages the outputs in one versioned draft release. See [CI/CD and releases](ci.md) and [distribution status](distribution-plan.md).

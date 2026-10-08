@@ -71,7 +71,7 @@ The previous AI coding plan also contributed useful engineering controls:
 - explicit release gates;
 - no weakening of tests or confidence thresholds to obtain a passing build.
 
-The old files are preserved under research/archive for historical traceability. This document supersedes them as the concise product and architecture plan.
+The older research files are preserved under research/archive for historical traceability. At the time this plan was written, it consolidated their recommendations; the current product and architecture source of truth is now in [docs/](../docs/README.md), especially the [architecture guide](../docs/architecture.md) and [roadmap](../docs/roadmap.md).
 
 ## 3. Current-state diagnosis after PR #35
 

@@ -2,6 +2,8 @@
 
 GlyphMend Desktop is the installable distribution of the existing local-first interface. It uses the same Rust `companion-service` and PDFium/Tesseract provider as the standalone Companion, but it calls them through Tauri IPC in the app process. Desktop does not start a loopback HTTP server. The browser engine remains available as a per-job option.
 
+The standalone Companion CLI is a headless loopback service for pairing with the browser; it is not a separate PDF-to-Markdown UI. Install GlyphMend Desktop to use the interface and bundled engine without opening a browser.
+
 ## Configured release targets
 
 | Platform | Artifact | Build runner | Runtime notes |
@@ -58,6 +60,17 @@ Use Node.js 22 and the Rust toolchain pinned in `companion/rust-toolchain.toml`.
 
 On Windows, install the Microsoft C++ Build Tools and select the **Desktop development with C++** workload, including the x64/x86 MSVC tools and a Windows SDK. This project builds the `x86_64-pc-windows-msvc` Rust target, which needs `link.exe`. Run development commands from **Developer PowerShell for Visual Studio** so the MSVC tools are available on `PATH`. Tauri also requires Microsoft Edge WebView2 for Windows development. See [Tauri's Windows prerequisites](https://v2.tauri.app/start/prerequisites/#windows) and [Microsoft's MSVC Build Tools guide](https://learn.microsoft.com/en-us/cpp/overview/acquire-msvc?view=msvc-170).
 
+On Ubuntu 24.04 and WSL, install the Linux packages used by the CI and packaging jobs:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential curl wget file libxdo-dev libssl-dev \
+  libayatana-appindicator3-dev librsvg2-dev libwebkit2gtk-4.1-dev libgtk-3-dev \
+  libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config patchelf
+```
+
+On macOS, install the Xcode Command Line Tools and the native OCR build dependencies with `brew install tesseract leptonica pkg-config`. Use Tauri's [platform prerequisites](https://v2.tauri.app/start/prerequisites/) for host-specific system packages and tooling.
+
 Run the single desktop development command from the repository root:
 
 ```bash
@@ -67,7 +80,11 @@ npm run dev:desktop
 
 `dev:desktop` prepares the pinned runtime and starts Tauri. Tauri's `beforeDevCommand` starts the shared Vite frontend at `http://127.0.0.1:1420`, and `devUrl` loads that server in the native WebView; development no longer depends on an old generated `dist/` directory. The installer path remains a bundled production build. For release packaging use `npm run build:desktop`. `npm run build:desktop:web` builds only the desktop-mode frontend. `npm run desktop:prepare` prepares runtime data explicitly, while `npm run desktop:clean:runtime` removes recognized generated data.
 
-Runtime preparation is idempotent when the current checkout already contains verified resources for the same target. If it finds missing, stale, or mismatched resources, it fails with the exact cleanup command. Run `npm run desktop:clean:runtime` and then `npm run desktop:prepare`; the cleaner refuses unknown files. Do not switch OS targets inside one checkout. Use separate Windows and WSL/Linux checkouts so the runtime and npm optional native binary remain isolated. Windows development also requires the Microsoft C++ Build Tools and a Developer PowerShell with `link.exe` on `PATH`.
+Runtime preparation is idempotent when the current checkout already contains verified resources for the same target. If it finds missing, stale, or mismatched resources, it fails with the exact cleanup command. Run `npm run desktop:clean:runtime` and then `npm run desktop:prepare`; the cleaner refuses unrecognized top-level entries in `resources/runtime`. Do not put user data inside generated runtime directories. Do not switch OS targets inside one checkout. Use separate Windows and WSL/Linux checkouts so the runtime and npm optional native binary remain isolated. Windows development also requires the Microsoft C++ Build Tools and a Developer PowerShell with `link.exe` on `PATH`.
+
+### Known WSL2 development issue
+
+WSL2/WSLg launch is not currently verified. In the latest reported runs, Tauri starts but the window remains blank or gray. The same result was reported with `WEBKIT_DISABLE_DMABUF_RENDERER=1` and with `GDK_BACKEND=x11`; neither is a confirmed fix. Keep WSL2 as a separate Linux checkout, and do not treat a successful process start as a successful UI launch. The repository has no verified workaround yet. Native Linux and Windows launch behavior must be checked independently from WSLg.
 
 ## Release process
 

@@ -12,6 +12,8 @@ This page records what the repository configures. It does not assert that a work
 
 All modes use the browser interface's shared Semantic Document IR validation and Markdown/DOCX exporters.
 
+The standalone Companion is an engine endpoint, not a third UI: its CLI starts a headless loopback service and pairs with the browser. The Desktop installer provides the standalone GlyphMend interface together with the same Rust engine through Tauri IPC.
+
 ## Configured package targets
 
 | Product | Targets configured in the workflows | Release behavior |
@@ -27,7 +29,7 @@ These are configured build targets, not a promise of clean-install compatibility
 ## Current repository evidence
 
 - The benchmark results checked into this repository are browser-only. They do not satisfy the paired-run stable-promotion gate.
-- Lightweight CI runs automatically for pull requests and pushes to `main`; tests, native matrix compilation, and benchmarks remain manual.
+- Lightweight CI runs automatically for pull requests and pushes to `main`; the full test suites, native Desktop matrix compilation, and paired benchmark are manually selected. The benchmark runner also executes its browser license, lint, typecheck, test, and build preflight.
 - Companion and Desktop artifacts are unsigned. Stable direct distribution requires the signing/notarization and validation described in the [Desktop guide](desktop.md).
 
 ## Release gates

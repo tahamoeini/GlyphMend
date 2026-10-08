@@ -13,4 +13,6 @@ npm run dev:desktop
 
 Use a separate checkout for each OS, including Windows and WSL. Install the OS-specific Tauri/WebView and Tesseract/Leptonica prerequisites before running the single development command. The root `npm run build:desktop` command creates a native installer; `npm run desktop:prepare` prepares resources and `npm run desktop:clean:runtime` clears recognized generated files when recovery is needed. IPC adapter and Rust service tests run in the manual full-validation workflow.
 
+WSL2/WSLg currently has an unresolved reported blank/gray window after launch, including with the attempted WebKit DMA-BUF and X11 settings. See the [known issue and status](../../../../docs/desktop.md#known-wsl2-development-issue); do not treat process startup as proof that the UI rendered.
+
 The IPC adapter sends at most 64 KiB per part and the Rust boundary caps each assembled input chunk at 1 MiB, limits incomplete assemblies, validates job identifiers, and delegates job lifecycle and IR validation to `companion-service`.

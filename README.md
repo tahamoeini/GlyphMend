@@ -51,6 +51,8 @@ npm run dev:desktop
 
 This prepares the target's pinned runtime and starts the shared interface in Tauri's development WebView. Keep a separate checkout for Windows, WSL, Linux, and macOS because native npm bindings and runtime files are platform-specific. See the [Desktop guide](docs/desktop.md).
 
+**WSL2 status:** the latest reported WSLg launches still show a blank/gray window, including with `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `GDK_BACKEND=x11`. There is no verified workaround in the repository yet; a process starting does not confirm that the interface rendered. See the [Desktop guide](docs/desktop.md#known-wsl2-development-issue).
+
 ## Optional Rust Companion
 
 The Companion is opt-in and processes the PDF locally. Download links and connection instructions are in the app's Companion area and on the [GitHub Releases page](https://github.com/tahamoeini/glyph-mend/releases). Start the downloaded program, connect using its loopback endpoint and one-time pairing code, then select Companion for an individual job. Browser remains the default.

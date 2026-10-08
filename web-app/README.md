@@ -29,14 +29,14 @@ npm run dev:web
 ```
 
 ```bash
-npm test # manual full-validation mode
+npm test # browser suite; not part of pull-request or push CI
 npm run build:web
 npm run preview --workspace glyphmend-browser
 ```
 
 The production output is `dist/`. Serve it over HTTPS; browsers restrict workers and service workers on `file://` URLs.
 
-The installable Desktop frontend is built with `npm run build:desktop:web`. That build uses the Tauri IPC adapter and omits the PWA service worker. To launch the native development app, run `npm run dev:desktop` from the repository root; to package an installer, run `npm run build:desktop`. See [GlyphMend Desktop](../docs/desktop.md).
+The installable Desktop frontend is built with `npm run build:desktop:web`. That build uses the Tauri IPC adapter and omits the PWA service worker. To launch the native development app, run `npm run dev:desktop` from the repository root; to package an installer, run `npm run build:desktop`. Keep OS-specific runtime files and native npm packages in separate checkouts. WSL2 currently has a reported unresolved blank/gray-window issue; see [GlyphMend Desktop](../docs/desktop.md#known-wsl2-development-issue).
 
 ## Optional Companion
 
