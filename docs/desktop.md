@@ -89,7 +89,7 @@ npm ci --include=optional
 npm run dev:desktop
 ```
 
-This is the single Desktop development command. It prepares the current OS's pinned runtime, then starts Tauri. Tauri's `beforeDevCommand` starts the shared Vite frontend in desktop mode at `http://127.0.0.1:1420`, which is loaded through `devUrl`. Development does not depend on a previously generated `dist` directory. Installer builds keep the production frontend path:
+This is the single Desktop development command. It prepares the current OS's pinned runtime, then starts Tauri. The Tauri hooks set the repository root as their working directory: `beforeDevCommand` starts the shared Vite frontend in desktop mode at `http://127.0.0.1:1420`, `beforeBuildCommand` creates the production frontend through the desktop build helper, and `beforeBundleCommand` stages the prepared runtime. Development does not depend on a previously generated `dist` directory. Installer builds keep the production frontend path:
 
 ```bash
 npm run build:desktop

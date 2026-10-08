@@ -4,10 +4,19 @@
   "version": "2.0.0",
   "identifier": "team.negar.glyphmend.desktop",
   "build": {
-    "beforeDevCommand": "npm --prefix ../../../../ run dev:desktop:web",
+    "beforeDevCommand": {
+      "script": "npm run dev:desktop:web",
+      "cwd": "../../../../"
+    },
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "node ../web/build-tauri.mjs",
-    "beforeBundleCommand": "node scripts/assemble-runtime.mjs",
+    "beforeBuildCommand": {
+      "script": "node companion/apps/companion-tauri/web/build-tauri.mjs",
+      "cwd": "../../../../"
+    },
+    "beforeBundleCommand": {
+      "script": "node companion/apps/companion-tauri/src-tauri/scripts/assemble-runtime.mjs",
+      "cwd": "../../../../"
+    },
     "frontendDist": "../web/dist"
   },
   "app": {
