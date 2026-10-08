@@ -38,7 +38,8 @@ if (missingPackages.length === 0) {
 // the safe, deterministic place to resolve optional platform packages.
 console.error(
   `[native-deps] Missing native packages for ${process.platform}/${process.arch}: ` +
-    `${missingPackages.join(", ")}. Run \`npm ci --include=optional\` from the repository root.`,
+    `${missingPackages.join(", ")}. Use a separate checkout for each OS/architecture target, ` +
+    "then run `npm ci --include=optional` from that checkout's repository root.",
 );
 process.exit(1);
 

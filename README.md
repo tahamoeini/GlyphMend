@@ -22,10 +22,10 @@
 Choose one of three modes:
 
 - **Browser/PWA:** open GlyphMend in a supported browser or install the PWA. Browser extraction, local checkpoints, workspace import/export, Markdown, and DOCX work without the Companion.
-- **Browser + Companion:** run the separate local Companion, pair through its loopback endpoint, and select it for an individual job. The browser remains the interface and fallback.
-- **GlyphMend Desktop:** install the native app and use the bundled interface. Its local PDFium/Tesseract engine is the default; browser extraction remains available for an individual job.
+- **Browser + local engine:** start the installed GlyphMend app with `--headless-companion`. The app hides its window, starts the loopback service, and opens the browser interface with a one-time pairing code. The browser remains the interface and fallback.
+- **GlyphMend Desktop:** install the same app normally and use its bundled interface. The UI calls the shared Rust engine through Tauri IPC; no browser pairing or loopback server is needed.
 
-The two native modes exchange the same versioned Semantic Document IR v2 as the browser engine. The standalone Companion uses the versioned loopback API; Desktop calls the same Rust service through Tauri IPC without starting an HTTP listener.
+The browser and both installed-app modes use the same versioned Semantic Document IR v2. Browser + local engine mode uses the loopback API; Desktop calls the same Rust service through Tauri IPC. GlyphMend does not publish a separate Companion installer. The CLI source is retained for developer diagnostics and benchmark tooling.
 
 No speed or accuracy advantage is claimed until independently labeled benchmarks support one for a specific document class.
 
@@ -49,25 +49,25 @@ npm ci --include=optional
 npm run dev:desktop
 ```
 
-This prepares the target's pinned runtime and starts the shared interface in Tauri's development WebView. Keep a separate checkout for Windows, WSL, Linux, and macOS because native npm bindings and runtime files are platform-specific. See the [Desktop guide](docs/desktop.md).
+This prepares the target's pinned runtime and starts the shared interface in Tauri's development WebView. Keep a separate checkout for Windows, WSL, Linux, and macOS because native npm bindings and runtime files are platform-specific. For WSL, put the Linux checkout under its Linux filesystem (for example `~/src/glyph-mend`), not on a mounted Windows drive such as `/mnt/f`; see the [Desktop guide](docs/desktop.md).
 
-**WSL2 status:** the latest reported WSLg launches still show a blank/gray window, including with `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `GDK_BACKEND=x11`. There is no verified workaround in the repository yet; a process starting does not confirm that the interface rendered. See the [Desktop guide](docs/desktop.md#known-wsl2-development-issue).
+**WSL2 status:** the latest reported WSLg launches still showed a blank/gray window, including with `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `GDK_BACKEND=x11`. The Tauri dev launcher now applies `WEBKIT_DISABLE_COMPOSITING_MODE=1` in WSL unless overridden, but that workaround still needs a visual check on this setup. A process starting does not confirm that the interface rendered. See the [Desktop guide](docs/desktop.md#reported-wsl2-issue).
 
-## Optional Rust Companion
+To run the same engine with the browser interface, use the installed GlyphMend executable with `--headless-companion`; in development, use `npm run dev:companion`. See the [Desktop guide](docs/desktop.md).
 
-The Companion is opt-in and processes the PDF locally. Download links and connection instructions are in the app's Companion area and on the [GitHub Releases page](https://github.com/tahamoeini/glyph-mend/releases). Start the downloaded program, connect using its loopback endpoint and one-time pairing code, then select Companion for an individual job. Browser remains the default.
+## Headless Companion mode
 
-Companion extraction offers Fast OCR by default and High Accuracy OCR as an explicit option. Both model sets for English, Russian, Persian, and Simplified Chinese are bundled in portable release packages. The initial prerelease is unsigned and may trigger Windows SmartScreen or macOS Gatekeeper warnings; verify its published checksum before running. A release remains a prerelease until benchmark results demonstrate repeatable improvements and browser-only behavior remains unchanged.
+This is a launch mode of the installed GlyphMend app, not a separate product download. It binds only to loopback, uses the existing one-time pairing protocol and capability report, and processes the PDF on the same machine. If pairing or processing fails, the browser provider remains available.
 
-See [Companion architecture and API](docs/companion-engine.md) and [release requirements](docs/ci.md).
+See [Companion architecture and API](docs/companion-engine.md) for the protocol and [release workflow](docs/ci.md) for the shared package version.
 
 ## GlyphMend Desktop
 
-The Desktop package targets Windows x64 (NSIS setup), Ubuntu 24.04 x64 (`.deb`), and macOS Intel and Apple silicon (`.dmg`). One versioned release workflow stages the browser distribution, standalone Companion packages, and Desktop installers in a single unsigned draft prerelease; Windows SmartScreen and macOS Gatekeeper may warn or block launch. Stable public distribution requires code signing and macOS notarization.
+The integrated Desktop package targets Windows x64 (NSIS setup), Ubuntu 24.04 x64 (`.deb`), and macOS Intel and Apple silicon (`.dmg`). Both macOS architecture builds and all other platform packages use the same automatically calculated SemVer prerelease. One manually dispatched release builds the browser artifact and integrated Desktop installers into a single unsigned draft release; there is no separate Companion package. Stable public distribution requires code signing and macOS notarization.
 
 The standard Windows installer uses the WebView2 bootstrapper and may need an internet connection to install WebView2 on a machine without its runtime. The alternative offline WebView2 installer adds about 127 MB and is not currently bundled. After installation, GlyphMend's frontend, PDFium, Tesseract, and all supported OCR models are bundled for offline work. The Desktop guide records the package and runtime checks: [GlyphMend Desktop](docs/desktop.md).
 
-Lightweight CI runs automatically for pull requests and pushes to `main`. Full validation and paired benchmarks remain manually selectable, and release packaging uses one versioned manual workflow. See [CI/CD and releases](docs/ci.md) for commands and release gates.
+Every CI/CD run is manually dispatched from one workflow. Choose the fast, test-free `quick` mode for licensing and dependency checks, lint, typecheck, and browser/Desktop frontend builds. Full validation and release modes add Rust formatting, compilation, and dependency-policy checks; paired benchmarks and release packaging are also separate manual modes. See [CI/CD and releases](docs/ci.md) for commands and SemVer rules.
 
 ## Product contract
 
@@ -100,3 +100,4 @@ The browser interface is licensed under AGPL-3.0-or-later; its [license](web-app
 - [Branding](docs/branding.md)
 - [Roadmap and release readiness](docs/roadmap.md)
 - [Documentation index](docs/README.md)
+- [Creator and attribution](CREATOR.md)

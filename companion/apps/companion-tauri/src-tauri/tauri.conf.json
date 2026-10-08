@@ -4,7 +4,7 @@
   "version": "2.0.0",
   "identifier": "team.negar.glyphmend.desktop",
   "build": {
-    "beforeDevCommand": "npm --prefix ../../../ run dev:desktop:web",
+    "beforeDevCommand": "npm --prefix ../../../../ run dev:desktop:web",
     "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "node ../web/build-tauri.mjs",
     "beforeBundleCommand": "node scripts/assemble-runtime.mjs",

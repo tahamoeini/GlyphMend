@@ -1,8 +1,10 @@
 # Third-party notices
 
-GlyphMend Companion distributions include or link to the following upstream
-components. Each release archive carries the corresponding license texts and an
-SPDX SBOM listing the resolved package versions.
+The integrated GlyphMend Desktop package includes or links to the following
+upstream components. Its runtime notices carry the license texts for the exact
+native runtime and model artifacts, and the release includes an SPDX SBOM with
+resolved package versions. The same engine is used in headless Companion mode;
+there is no separate Companion release archive.
 
 | Component | License/source |
 | --- | --- |
@@ -13,6 +15,6 @@ SPDX SBOM listing the resolved package versions.
 | `tessdata_fast` language models | See the upstream [`tessdata_fast` license](https://github.com/tesseract-ocr/tessdata_fast/blob/main/LICENSE) |
 | `tessdata_best` language models | See the upstream [`tessdata_best` license](https://github.com/tesseract-ocr/tessdata_best/blob/main/LICENSE) |
 
-The packaged notices directory includes the upstream notices retrieved for the
-exact runtime and model artifacts in that release. Preserve those files when
-redistributing the Companion archive.
+The packaged notices directory includes the upstream notices retrieved for
+the exact runtime and model artifacts in that release. Preserve those files
+when redistributing the GlyphMend Desktop installer.

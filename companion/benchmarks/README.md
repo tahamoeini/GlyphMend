@@ -17,7 +17,7 @@ From the repository root, run:
 
 Repeat with --ocr-accuracy high-accuracy to produce a separate Best-model dataset. Each run uses identical PDF bytes in both engines, alternates engine order by repeat, records engine and model hashes, per-page fallback details, character and word error, reading order, structure labels, elapsed extraction time, and peak process-tree RSS memory. The browser platform currently uses its bundled English best_int OCR model; that model identity is recorded separately from the selected Companion model. Treat those as distinct configurations when interpreting results.
 
-Select `benchmark` in `.github/workflows/platform-ci.yml` to run the paired benchmark manually. It installs the pinned Linux runtimes and uploads raw and evaluated results as a workflow artifact; it does not run on pushes or pull requests.
+Manually select `benchmark` in `.github/workflows/platform-ci.yml` to run the paired benchmark. The workflow has no automatic triggers. It installs the pinned Linux runtimes and uploads raw and evaluated results as a workflow artifact.
 
 ## Browser-only baseline
 
@@ -36,4 +36,4 @@ The report includes per-class medians as well as every paired measurement. Stabl
 
     node companion/benchmarks/check-stable-promotion.mjs /tmp/glyphmend-fast-report.json
 
-The gate fails closed if evidence is absent or does not match the corpus manifest. A benchmark run is evidence, not a performance claim; publish claims only for classes and configurations that show repeatable measured improvements with no browser regression. The initial Companion release is a prerelease.
+The gate fails closed if evidence is absent or does not match the corpus manifest. A benchmark run is evidence, not a performance claim; publish claims only for classes and configurations that show repeatable measured improvements with no browser regression. The Rust provider ships only inside the integrated GlyphMend Desktop prerelease; there is no separate Companion release.

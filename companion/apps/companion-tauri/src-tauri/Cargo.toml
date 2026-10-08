@@ -10,6 +10,7 @@ tauri-build = { version = "2.7.0", features = [] }
 
 [dependencies]
 companion-contract = { path = "../../../crates/companion-contract", version = "0.1.0" }
+companion-bridge = { path = "../../../crates/companion-bridge", version = "0.1.0" }
 companion-core = { path = "../../../crates/companion-core", version = "0.1.0" }
 companion-extractor = { path = "../../../crates/companion-extractor", version = "0.1.0" }
 companion-service = { path = "../../../crates/companion-service", version = "0.1.0" }

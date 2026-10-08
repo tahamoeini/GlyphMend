@@ -2,9 +2,9 @@
 
 > **Faithful document reconstruction from PDF to structured Markdown.**
 
-This is the complete default GlyphMend product. It runs locally on the user's device without a backend, account, document upload, telemetry requirement, or Companion runtime. A user may optionally connect the Rust Companion and choose it for an individual extraction job; the browser remains the default and fallback engine.
+This is the complete browser-only GlyphMend product. It runs locally on the user's device without a backend, account, document upload, telemetry requirement, or installed engine. A user may optionally pair with the headless mode of the installed GlyphMend app and choose its Rust engine for an individual job; the browser remains the default and fallback.
 
-For operations and troubleshooting, see the [browser guide](../docs/browser.md). For Companion connection and API details, see the [Companion guide](../docs/companion-engine.md).
+For operations and troubleshooting, see the [browser guide](../docs/browser.md). For local-engine pairing and API details, see the [Companion guide](../docs/companion-engine.md).
 
 ## Complete local workflow
 
@@ -29,24 +29,24 @@ npm run dev:web
 ```
 
 ```bash
-npm test # browser suite; not part of pull-request or push CI
+npm test # browser suite; run locally or through manual full validation
 npm run build:web
 npm run preview --workspace glyphmend-browser
 ```
 
-The production output is `dist/`. Serve it over HTTPS; browsers restrict workers and service workers on `file://` URLs.
+The production output is `web-app/dist/`. Serve it over HTTPS; browsers restrict workers and service workers on `file://` URLs.
 
-The installable Desktop frontend is built with `npm run build:desktop:web`. That build uses the Tauri IPC adapter and omits the PWA service worker. To launch the native development app, run `npm run dev:desktop` from the repository root; to package an installer, run `npm run build:desktop`. Keep OS-specific runtime files and native npm packages in separate checkouts. WSL2 currently has a reported unresolved blank/gray-window issue; see [GlyphMend Desktop](../docs/desktop.md#known-wsl2-development-issue).
+The installed Desktop frontend is built with `npm run build:desktop:web`. It uses the Tauri IPC adapter and omits the PWA service worker. From the repository root, run `npm run dev:desktop` to develop the installed app, `npm run dev:companion` to run the headless local engine with the browser UI, or `npm run build:desktop` to package the installer. Keep Windows, WSL, Linux, and macOS checkouts separate because native npm bindings and runtime resources are target-specific. Put a WSL checkout under the Linux filesystem (for example `~/src/glyph-mend`), not on `/mnt/<drive>`. The Tauri dev launcher warns about a mounted Windows checkout and applies the optional WebKit compositor workaround in WSL; WSLg still needs a visual launch confirmation. See [GlyphMend Desktop](../docs/desktop.md#reported-wsl2-issue).
 
 ## Optional Companion
 
-The Companion is selected only for a job after a user connects it. It returns Semantic Document IR v2 to this application; the same browser Markdown and DOCX exporters remain in use. If loopback access is denied or the Companion is unavailable, unsupported, or fails, the browser engine processes the job. See the [Companion guide](../docs/companion-engine.md).
+The browser can pair with the installed GlyphMend app running `--headless-companion`. It returns Semantic Document IR v2 to this application; the same browser Markdown and DOCX exporters remain in use. If loopback access is denied or the local engine is unavailable, unsupported, or fails, the browser engine processes the job. No separate Companion installer is distributed. See the [Companion guide](../docs/companion-engine.md).
 
 ## Licensing
 
 The browser platform, including the MuPDF.js integration, is licensed under AGPL-3.0-or-later. The complete license is in [LICENSE](./LICENSE). The app footer links to the corresponding source tree and license for the deployed build; deployments outside the GitHub workflow must set the matching VITE_SOURCE_URL and VITE_LICENSE_URL build variables. Network-interactive deployments must make the corresponding source for the running version available under the AGPL terms.
 
-This is an engineering implementation of the project’s chosen license route, not legal advice. MuPDF.js is also available under a commercial license from Artifex. Tesseract.js is Apache-2.0 and the bundled English data package is MIT licensed. The Rust Companion remains separately licensed as Apache-2.0 OR MIT; its package notices and dependencies are tracked in release archives.
+This is an engineering implementation of the project’s chosen license route, not legal advice. MuPDF.js is also available under a commercial license from Artifex. Tesseract.js is Apache-2.0 and the bundled English data package is MIT licensed. The Rust service and Tauri host are separately licensed as Apache-2.0 OR MIT; the integrated Desktop package includes their dependency notices.
 
 ## Interface materials
 

@@ -2,11 +2,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 
+use companion_bridge::{BridgeConfig, BridgeHandle, DEFAULT_WEB_ORIGIN};
 use companion_contract::{InputChunk, InputComplete, JobCreate, MAX_CHUNK_BYTES};
 use companion_extractor::PdfiumTesseractProvider;
 use companion_service::{EventsPage, JobManager, JobResultResponse};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
-use tauri::{path::BaseDirectory, Manager, State};
+use std::{collections::HashMap, path::PathBuf, process::Command, sync::Arc, time::Duration};
+use tauri::{path::BaseDirectory, AppHandle, Manager, State};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -22,6 +23,7 @@ struct PendingChunkParts {
 struct Runtime {
     service: Arc<JobManager>,
     cleanup_cancellation: CancellationToken,
+    bridge_handle: tokio::sync::Mutex<Option<BridgeHandle>>,
     pending_chunks: tokio::sync::Mutex<HashMap<(Uuid, u64), PendingChunkParts>>,
 }
 
@@ -240,9 +242,11 @@ fn parse_job_id(value: &str) -> Result<Uuid, String> {
         .map_err(|_| "The companion rejected the job identifier.".into())
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let arguments = std::env::args().collect::<Vec<_>>();
+    let bridge_config = parse_bridge_config(&arguments)?;
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             let resource_path = |path: &str| app.path().resolve(path, BaseDirectory::Resource);
             let pdfium_dir = resource_path("runtime/pdfium")?;
             let tessdata_root = resource_path("runtime/tessdata")?;
@@ -257,14 +261,30 @@ fn main() {
                 storage_dir,
             )?);
             let cleanup_cancellation = CancellationToken::new();
-            tauri::async_runtime::spawn(
-                Arc::clone(&service).cleanup_loop(cleanup_cancellation.clone()),
-            );
+            if bridge_config.is_some() {
+                let window = app.get_webview_window("main").ok_or_else(|| {
+                    std::io::Error::other("the main GlyphMend window is unavailable")
+                })?;
+                window.hide()?;
+            }
             app.manage(Runtime {
-                service,
-                cleanup_cancellation,
+                service: Arc::clone(&service),
+                cleanup_cancellation: cleanup_cancellation.clone(),
+                bridge_handle: tokio::sync::Mutex::new(None),
                 pending_chunks: tokio::sync::Mutex::new(HashMap::new()),
             });
+            if let Some((config, web_origin)) = bridge_config.clone() {
+                start_headless_companion(
+                    app.handle().clone(),
+                    config,
+                    web_origin,
+                    Arc::clone(&service),
+                );
+            } else {
+                tauri::async_runtime::spawn(
+                    Arc::clone(&service).cleanup_loop(cleanup_cancellation),
+                );
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -277,8 +297,88 @@ fn main() {
             companion_acknowledge_result,
             companion_cancel_job
         ])
-        .run(tauri::generate_context!())
-        .expect("Tauri companion could not start");
+        .run(tauri::generate_context!())?;
+    Ok(())
+}
+
+fn parse_bridge_config(
+    arguments: &[String],
+) -> Result<Option<(BridgeConfig, String)>, Box<dyn std::error::Error>> {
+    if !arguments
+        .iter()
+        .any(|argument| argument == "--headless-companion")
+    {
+        return Ok(None);
+    }
+
+    let origins = arguments
+        .iter()
+        .enumerate()
+        .filter(|(_, argument)| argument.as_str() == "--web-origin")
+        .collect::<Vec<_>>();
+    if origins.len() > 1 {
+        return Err("--web-origin may be specified only once".into());
+    }
+    let web_origin = match origins.first() {
+        Some((index, _)) => arguments
+            .get(*index + 1)
+            .filter(|value| !value.starts_with("--"))
+            .cloned()
+            .ok_or("--web-origin requires an exact http or https origin")?,
+        None => DEFAULT_WEB_ORIGIN.to_string(),
+    };
+
+    let config = BridgeConfig::for_web_origin(&web_origin)?;
+    Ok(Some((config, web_origin.trim_end_matches('/').to_string())))
+}
+
+fn start_headless_companion(
+    app: AppHandle,
+    config: BridgeConfig,
+    web_origin: String,
+    service: Arc<JobManager>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let handle = match companion_bridge::start(config, service).await {
+            Ok(handle) => handle,
+            Err(error) => {
+                eprintln!("GlyphMend Companion could not start: {error}");
+                app.exit(1);
+                return;
+            }
+        };
+        let connection_url = format!(
+            "{}/#companionEndpoint={}&companionCode={}",
+            web_origin, handle.endpoint, handle.pairing_code
+        );
+        let endpoint = handle.endpoint.clone();
+        let pairing_code = handle.pairing_code.clone();
+        app.state::<Runtime>()
+            .bridge_handle
+            .lock()
+            .await
+            .replace(handle);
+        println!("GlyphMend Companion ready at {endpoint}; pairing code: {pairing_code}");
+        if let Err(error) = open_browser(&connection_url) {
+            eprintln!("Could not open the browser automatically: {error}");
+            eprintln!("Open this URL to connect: {connection_url}");
+        }
+    });
+}
+
+fn open_browser(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer.exe").arg(url).spawn().map(|_| ())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg(url).spawn().map(|_| ())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open").arg(url).spawn().map(|_| ())
+    }
 }
 
 #[cfg(test)]

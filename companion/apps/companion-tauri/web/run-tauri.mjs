@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 const webDir = path.dirname(fileURLToPath(import.meta.url));
 const tauriDir = path.resolve(webDir, "../src-tauri");
 const repositoryRoot = path.resolve(webDir, "../../../..");
+const isWsl = process.platform === "linux" && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
+const isWslWindowsMount = isWsl && /^\/mnt\/[a-z](?:\/|$)/i.test(repositoryRoot.replaceAll("\\", "/"));
+const wslCheckoutNote = isWslWindowsMount
+  ? " This WSL checkout is on a Windows-mounted drive; use a separate Linux-filesystem checkout under ~/src/glyph-mend."
+  : "";
 const requireFromRepository = createRequire(path.join(repositoryRoot, "package.json"));
 const nativeCliPackage = getNativeCliPackage();
 let tauriCliEntry;
@@ -23,12 +28,27 @@ if (!tauriCliEntry || (nativeCliPackage && !nativeCliAvailable)) {
   throw new Error(
     `The Tauri CLI or its native package for ${process.platform}/${process.arch} is missing. `
     + "From the repository root, install dependencies with Node.js 22 using `npm ci --include=optional`. "
-    + "Keep Windows and WSL checkouts separate; their node_modules are not interchangeable.",
+    + "Use a separate checkout for each OS/architecture target; platform-specific node_modules and runtime files are not interchangeable."
+    + wslCheckoutNote,
   );
 }
 
-const result = spawnSync(process.execPath, [tauriCliEntry, ...process.argv.slice(2)], {
+const tauriArgs = process.argv.slice(2);
+const tauriEnvironment = { ...process.env };
+if (isWslWindowsMount) {
+  console.warn(
+    "[tauri] This WSL checkout is on a Windows-mounted drive. Use a separate checkout under ~/src/glyph-mend; "
+    + "do not share Windows node_modules or runtime resources.",
+  );
+}
+if (isWsl && tauriArgs[0] === "dev" && tauriEnvironment.WEBKIT_DISABLE_COMPOSITING_MODE === undefined) {
+  tauriEnvironment.WEBKIT_DISABLE_COMPOSITING_MODE = "1";
+  console.log("[tauri] WSL detected; disabling WebKit compositing for this development session.");
+}
+
+const result = spawnSync(process.execPath, [tauriCliEntry, ...tauriArgs], {
   cwd: tauriDir,
+  env: tauriEnvironment,
   stdio: "inherit",
 });
 

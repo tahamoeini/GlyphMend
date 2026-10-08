@@ -509,6 +509,7 @@ name = "companion-tauri"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "companion-bridge",
  "companion-contract",
  "companion-core",
  "companion-extractor",

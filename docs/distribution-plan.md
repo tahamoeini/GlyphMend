@@ -1,41 +1,39 @@
 # Distribution status and release gates
 
-This page records what the repository configures. It does not assert that a workflow has passed or that a release artifact is currently public. Check the linked GitHub Actions runs and Releases page for live status.
+This page describes configured product paths and repository behavior. It does not assert that a workflow passed or that a release is publicly available. Check the linked Actions run and Releases page for live evidence.
 
-## Product modes
+## User-facing product paths
 
-| Mode | Processing path | Distribution path |
+| Mode | Interface | Engine | Distribution |
+| --- | --- | --- | --- |
+| Browser/PWA | Browser | Browser provider using MuPDF WebAssembly and bundled browser OCR. No Companion required. | Static site plus a versioned browser archive. Deploying the site is separate. |
+| Browser + local engine | Browser | Installed GlyphMend app started in headless Companion mode; user-paired loopback API to the Rust service. | The engine ships inside the same GlyphMend Desktop app; no separate Companion package. |
+| GlyphMend Desktop | Installed Tauri app | Same Rust service and PDFium/Tesseract provider through registered IPC. No loopback listener. | One native installer for each configured OS/architecture target. |
+
+All modes use the shared interface's Semantic Document IR validation, review, checkpoint, Markdown, and DOCX export paths. The source-only Rust CLI remains useful for development and benchmark runs; it is not a separate user-facing PDF-to-Markdown application.
+
+## Configured artifacts
+
+| Artifact | Configured targets | Release contents |
 | --- | --- | --- |
-| Browser/PWA | Browser provider uses MuPDF WebAssembly and bundled browser OCR; no Companion required. | Static build in web-app/dist and a versioned browser artifact. |
-| Browser + Companion | Paired provider connects through the user-authorized loopback API to the standalone Rust service. | Portable Companion archives are produced by the unified release workflow. |
-| GlyphMend Desktop | Bundled provider uses the same Rust service over Tauri IPC; no loopback listener. | Platform-specific native installers are produced by the unified release workflow. |
+| Browser/PWA | Static web assets | Browser build, project license, generated dependency report, third-party notices, checksum, SPDX SBOM, and provenance. |
+| Integrated Desktop | Windows x64 NSIS, Ubuntu 24.04 x64 `.deb`, macOS Intel `.dmg`, macOS Apple silicon `.dmg` | Shared web interface, bundled Rust engine and native runtime data, runtime manifest, notices, checksum, SPDX SBOM, and provenance. Each package is inspected and its extracted runtime is used for digital-text and raster-OCR smoke checks. |
 
-All modes use the browser interface's shared Semantic Document IR validation and Markdown/DOCX exporters.
+There is no standalone Companion release matrix. All artifacts use one calculated prerelease version and are attached to one draft GitHub prerelease after every package job succeeds. The draft remains unpublished until a maintainer reviews and publishes it.
 
-The standalone Companion is an engine endpoint, not a third UI: its CLI starts a headless loopback service and pairs with the browser. The Desktop installer provides the standalone GlyphMend interface together with the same Rust engine through Tauri IPC.
+These targets are build configurations, not a clean-install guarantee for every OS version. The packaged engine smoke checks validate extraction against the staged installer resources; they do not replace a clean-machine GUI install, offline launch, restart, workspace restore, or upgrade check. Windows may need internet access during installation to obtain WebView2 if it is not already installed.
 
-## Configured package targets
+## Current evidence
 
-| Product | Targets configured in the workflows | Release behavior |
-| --- | --- | --- |
-| Companion | Windows x64/ARM64, macOS x64/ARM64, Linux x64/ARM64. | Unsigned packages with runtime files, OCR data, notices, checksums, SPDX SBOM, and provenance. |
-| Desktop | Windows x64 NSIS, Ubuntu 24.04 x64 .deb, macOS Intel .dmg, macOS Apple silicon .dmg. | Unsigned installers with runtime smoke checks, checksums, SPDX SBOM, and provenance. |
-| Browser/PWA | Static web assets. | Versioned static artifact with third-party notices, checksum, SPDX SBOM, and provenance. Deployment to the public site is separate. |
-
-All three distributions use one shared version and are attached to one draft prerelease after their parallel package jobs succeed.
-
-These are configured build targets, not a promise of clean-install compatibility on every operating-system version. The Desktop release workflow checks package contents and native runtime dependencies; the installed WebView still needs a full offline, restart, and upgrade validation. Windows machines may need network access during installation if WebView2 is missing.
-
-## Current repository evidence
-
-- The benchmark results checked into this repository are browser-only. They do not satisfy the paired-run stable-promotion gate.
-- Lightweight CI runs automatically for pull requests and pushes to `main`; the full test suites, native Desktop matrix compilation, and paired benchmark are manually selected. The benchmark runner also executes its browser license, lint, typecheck, test, and build preflight.
-- Companion and Desktop artifacts are unsigned. Stable direct distribution requires the signing/notarization and validation described in the [Desktop guide](desktop.md).
+- The six-document benchmark results checked into the repository are browser-only and do not meet the paired-run promotion gate.
+- The only GitHub Actions workflow has a `workflow_dispatch` trigger and no automatic push, pull-request, schedule, or tag triggers. Every mode is manually selected. `quick` contains npm dependency, source-quality, and frontend build checks without tests or Rust toolchain setup; full validation and release add Rust quality/compilation checks, and paired benchmarks and release packaging are separate manual modes.
+- The reviewed [Actions run 37810064919](https://github.com/tahamoeini/glyph-mend/actions/runs/37810064919) showed browser packaging failing on a missing dependency-report file and raster-only OCR smoke failures on Ubuntu and macOS. The consolidated workflow generates the dependency report. Its packaged OCR smoke now uses the shorter raster token `MEND` and reports terminal service events and fallback diagnostics on failure; this adjustment remains unverified until a successful release run checks every target.
+- Browser and Desktop packages are unsigned. Stable distribution needs configured signing/notarization and clean-machine install validation.
 
 ## Release gates
 
-- **Stable Companion release:** remains blocked until the paired benchmark evidence passes the stable-promotion gate.
-- **Desktop stable distribution:** add and validate Windows code signing and macOS signing/notarization, then complete clean-machine installation and packaged-WebView lifecycle checks.
-- **Performance or accuracy claims:** publish only results supported by repeatable paired measurements for the stated document class and configuration.
+- **Stable engine release:** require the paired benchmark promotion gate and browser regression evidence for every corpus class before making comparative performance or accuracy claims.
+- **Stable Desktop distribution:** configure and validate Windows signing and macOS signing/notarization; complete clean-machine installation and packaged WebView lifecycle checks.
+- **Release evidence:** review the exact workflow revision, uploaded artifacts, checksums, SBOMs, provenance, installer contents, and smoke-test results before publishing the draft.
 
-See [CI/CD and releases](ci.md), [roadmap](roadmap.md), and the [benchmark guide](../companion/benchmarks/README.md).
+See [the unified validation and release workflow](ci.md), [the Desktop guide](desktop.md), [the roadmap](roadmap.md), and the [benchmark guide](../companion/benchmarks/README.md).

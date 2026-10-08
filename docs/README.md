@@ -1,21 +1,31 @@
 # GlyphMend documentation
 
-These guides describe the behavior and workflows represented by the current repository. The root [README](../README.md) is the product overview and quick start. The product has three supported use paths: browser/PWA alone, browser with an optional paired Companion, and the installed Desktop app with its bundled engine. The Companion executable is a headless local service; Desktop is the standalone user interface. For live CI and release status, check the corresponding GitHub Actions run and Releases page; workflow definitions and Git tags do not prove that a run succeeded or that an artifact was published.
+The repository has one shared web interface and one Rust processing service. Users can choose one of three paths:
+
+1. **Browser only:** use the hosted or locally built web app; no Companion process is required.
+2. **Browser with the local engine:** launch the installed GlyphMend app in headless Companion mode. It runs the loopback service and opens the browser interface for pairing.
+3. **Installed Desktop app:** use the same web interface inside Tauri with the bundled Rust engine through IPC.
+
+There is no separately distributed Companion installer. The headless engine and Desktop interface are modes of the same installed GlyphMend app. The Companion CLI source remains for development and benchmarks; it is not the user-facing product.
+
+## Guides
 
 | Guide | Use it for |
 | --- | --- |
-| [Browser operations](browser.md) | Local processing, OCR settings, checkpoints, deployment, and troubleshooting. |
-| [Browser application](../web-app/README.md) | Browser features, build commands, exports, and licensing. |
-| [Companion workspace](../companion/README.md) | Rust workspace structure and local CLI development. |
-| [Companion engine and API](companion-engine.md) | Pairing, loopback API, request limits, fallback, and portable packages. |
-| [GlyphMend Desktop](desktop.md) | Tauri host, runtime resources, package targets, and local development. |
-| [CI/CD and releases](ci.md) | Automatic lightweight CI, manually selected full validation and benchmarks, root commands, and versioned release procedures. |
-| [Compliance and data handling](compliance.md) | Project licenses, dependency checks, release notices, and document data paths. |
-| [Distribution status](distribution-plan.md) | Configured targets and remaining release evidence. |
-| [Architecture](architecture.md) | Product boundaries, data flow, and repository layout. |
-| [Branding](branding.md) | Canonical brand configuration and generated browser assets. |
-| [Roadmap](roadmap.md) | Implemented capabilities and outstanding validation. |
-| [Historical UI redesign record](STITCH_UI_CONTRACT.md) | Archived Stitch redesign decisions and acceptance notes; not the current UI specification. |
-| [Archive index](archive/README.md) | Historical upgrade records. |
+| [Browser operations](browser.md) | Browser-only use, local data, extraction settings, deployment, and troubleshooting. |
+| [Browser application](../web-app/README.md) | Frontend development, builds, exports, and license reporting. |
+| [Companion workspace](../companion/README.md) | Rust service and bridge development, including headless Desktop mode. |
+| [Companion engine and API](companion-engine.md) | Loopback pairing, security boundaries, protocol, capability reporting, and fallback. |
+| [GlyphMend Desktop](desktop.md) | Installed app, headless mode, native resources, development, and package targets. |
+| [CI/CD and releases](ci.md) | Manually dispatched quick checks, full validation, benchmarks, release versioning, and artifacts. |
+| [Compliance and data handling](compliance.md) | Licenses, dependency notices, local document handling, and distribution controls. |
+| [Distribution status](distribution-plan.md) | Current outputs and release gates. |
+| [Architecture](architecture.md) | Shared interface, providers, processing core, and repository layout. |
+| [Branding](branding.md) | Canonical brand configuration and generated assets. |
+| [Roadmap](roadmap.md) | Implemented behavior and outstanding verification. |
+| [Historical UI redesign record](STITCH_UI_CONTRACT.md) | Archived redesign decisions; not a current product specification. |
+| [Documentation archive](archive/README.md) | Historical upgrade records that are not authoritative for current behavior. |
 
-The Browser/PWA is complete without a Companion. Users can optionally select the standalone Companion for a job or install Desktop, which uses the same Rust extraction service through Tauri IPC. Historical plans and redesign records are linked for context only; use the guides above and the current code as the implementation source of truth.
+## Source of truth
+
+Use the current code and guides above for active product behavior. Archived plans, benchmark notes, and design records preserve history and must not be used as current implementation instructions. Workflow files describe what can be run; inspect the linked Actions run for evidence that a revision actually passed.

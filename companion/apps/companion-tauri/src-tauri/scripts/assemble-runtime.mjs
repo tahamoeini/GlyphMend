@@ -372,18 +372,24 @@ const target = process.env.TARGET || sourceManifest.target;
 if (target !== sourceManifest.target) {
   throw new Error(
     `Prepared runtime target ${sourceManifest.target} does not match build target ${target}. `
-    + "Use a separate checkout for each OS, or from the repository root run `npm run desktop:clean:runtime` then `npm run desktop:prepare`.",
+    + "Use a separate checkout for each OS/architecture target. If this checkout is dedicated to the requested target, "
+    + "recover from the repository root with `npm run desktop:clean:runtime` followed by `npm run desktop:prepare`.",
   );
 }
 const pdfiumPath = path.join(runtimeDir, "pdfium", sourceManifest.pdfium.file);
 if (!existsSync(pdfiumPath)) {
   throw new Error(
     `Prepared PDFium library is missing: ${pdfiumPath}. `
-    + "From the repository root run `npm run desktop:clean:runtime` then `npm run desktop:prepare`.",
+    + "If this checkout is dedicated to the current target, recover from the repository root with "
+    + "`npm run desktop:clean:runtime` followed by `npm run desktop:prepare`. Use a separate checkout for other targets.",
   );
 }
 if (!sourceManifest.tessdata?.commits?.fast || !sourceManifest.tessdata?.commits?.best) {
-  throw new Error("Prepared OCR model provenance is missing.");
+  throw new Error(
+    "Prepared OCR model provenance is missing. If this checkout is dedicated to the current target, "
+    + "run `npm run desktop:clean:runtime` followed by `npm run desktop:prepare` from the repository root. "
+    + "Use a separate checkout for other targets.",
+  );
 }
 
 const binarySuffix = target.includes("windows") ? ".exe" : "";

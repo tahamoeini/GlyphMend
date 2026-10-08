@@ -1,66 +1,67 @@
-# GlyphMend Desktop
+# GlyphMend Desktop and local Companion mode
 
-GlyphMend Desktop is the installable distribution of the existing local-first interface. It uses the same Rust `companion-service` and PDFium/Tesseract provider as the standalone Companion, but it calls them through Tauri IPC in the app process. Desktop does not start a loopback HTTP server. The browser engine remains available as a per-job option.
+GlyphMend ships one installable app containing the shared web interface and the Rust processing service. The app supports two launch modes: normal Desktop mode, where Tauri presents the interface and calls the bundled engine through IPC; and headless Companion mode, where the app starts the loopback service for the browser interface. There is no separate Companion installer.
 
-The standalone Companion CLI is a headless loopback service for pairing with the browser; it is not a separate PDF-to-Markdown UI. Install GlyphMend Desktop to use the interface and bundled engine without opening a browser.
+The hosted or self-hosted browser application remains a complete third usage path and needs no installed app. In all three paths, the frontend uses the same result validation, review, checkpoint, Markdown, and DOCX export code.
 
-## Configured release targets
+## Product modes
+
+| Mode | Interface | Processing |
+| --- | --- | --- |
+| Browser/PWA | Browser | Browser provider; local extraction and OCR. No Companion required. |
+| Browser + local engine | Browser | The installed GlyphMend app runs headless and exposes the user-paired loopback API. |
+| GlyphMend Desktop | Installed app | Shared web interface in Tauri; bundled Rust engine through Tauri IPC. No loopback server. |
+
+The CLI source in the Rust workspace remains for development and benchmark tooling. It does not provide a standalone PDF-to-Markdown command and is not a separate user download.
+
+## Configured Desktop targets
 
 | Platform | Artifact | Build runner | Runtime notes |
 | --- | --- | --- | --- |
-| Windows x64 | NSIS setup `.exe` | Windows x64 | WebView2 bootstrapper; Tesseract/Leptonica use the static `x64-windows-static-md` triplet; PDFium and all OCR models are bundled. |
-| Ubuntu 24.04 x64 | `.deb` | Ubuntu 24.04 x64 | WebKitGTK 4.1 and GTK runtime packages are installer dependencies; Tesseract/Leptonica and their non-system native libraries are bundled. |
-| macOS Intel | `.dmg` | macOS 15 Intel | Unsigned; bundle assembly checks the app and bundled libraries against the configured macOS 12.0 minimum. Clean-install compatibility still requires validation. |
-| macOS Apple silicon | `.dmg` | macOS 15 Apple silicon | Unsigned; bundle assembly checks the app and bundled libraries against the configured macOS 12.0 minimum. Clean-install compatibility still requires validation. |
+| Windows x64 | NSIS setup `.exe` | Windows x64 | WebView2 bootstrapper; Tesseract/Leptonica use the static `x64-windows-static-md` triplet. PDFium and OCR models are bundled. |
+| Ubuntu 24.04 x64 | `.deb` | Ubuntu 24.04 x64 | WebKitGTK 4.1 and GTK runtime packages are installer dependencies; the native OCR libraries and models are bundled. |
+| macOS Intel | `.dmg` | macOS 15 Intel | Unsigned; app and bundled libraries are checked against the configured macOS 12.0 minimum. Clean-install compatibility still needs validation. |
+| macOS Apple silicon | `.dmg` | macOS 15 Apple silicon | Unsigned; app and bundled libraries are checked against the configured macOS 12.0 minimum. Clean-install compatibility still needs validation. |
 
-Each architecture is a separate artifact. There is no cross-platform installer. AppImage and Linux ARM are not initial Desktop targets.
-
-These are workflow targets, not a clean-install support guarantee. The package workflow inspects native contents and dependencies, but installed-app compatibility still needs clean-machine validation.
+These are configured build targets, not a clean-install support guarantee. There is no cross-platform installer. AppImage and Linux ARM are not initial targets.
 
 ## Install and offline behavior
 
-The Windows installer uses Tauri's WebView2 bootstrapper. A machine without WebView2 may need an internet connection during installation. The current installer does not include the approximately 127 MB WebView2 offline installer. Once installed, the frontend, PDFium, Tesseract, and Fast/Best OCR data for English, Russian, Persian, and Simplified Chinese are bundled; extraction does not download models or send document content to a remote service. See Tauri's [Windows installer modes](https://v2.tauri.app/distribute/windows-installer/) for their current behavior and size tradeoffs.
+The Windows installer uses Tauri's WebView2 bootstrapper. A machine without WebView2 may need an internet connection during installation. The current installer does not include the approximately 127 MB offline WebView2 installer. After install, the frontend, PDFium, Tesseract, and Fast/Best OCR data for English, Russian, Persian, and Simplified Chinese are bundled. Extraction does not download models or send document content to a remote service. See Tauri's [Windows installer modes](https://v2.tauri.app/distribute/windows-installer/) for current behavior and size tradeoffs.
 
-Windows SmartScreen and macOS Gatekeeper can warn or block these unsigned prereleases. Stable public distribution requires Windows code signing and macOS signing plus notarization. Linux packages target Ubuntu 24.04 and the linked GTK/WebKitGTK system libraries declared by the `.deb`.
+Windows SmartScreen and macOS Gatekeeper can warn about or block these unsigned prereleases. Stable public distribution requires Windows code signing and macOS signing plus notarization. Linux packages target Ubuntu 24.04 and the GTK/WebKitGTK system libraries declared as package dependencies.
 
-## Updating Desktop
+## Processing, fallback, and saved work
 
-No in-app updater is configured. Desktop installers are produced by the manually dispatched release workflow and remain drafts until a maintainer publishes them. To update, obtain the published installer for the target operating system and follow its installer flow. Export a workspace checkpoint before upgrading if the data is important; checkpoints can be imported again through the app. The release workflow does not yet verify checkpoint recovery across an installed-app upgrade.
+Desktop uses the bundled Rust provider by default for new jobs. The engine selector can choose browser processing for an individual job. The interface reports selected and used engines, available capabilities and IR version, and any fallback. If the Rust engine fails, the current uncommitted batch can fall back to browser extraction. User cancellation does not start a second extraction.
 
-## Local processing and saved work
+The browser and Desktop builds share frontend persistence code, but their WebView/browser profiles are separate. Checkpoints, preferences, and activity history use IndexedDB in the current profile. Export a workspace checkpoint to move it to another browser profile or installation; import it there explicitly. There is no automatic database bridge between Desktop and the browser. The PWA service worker is omitted from Desktop, whose frontend assets are embedded in the app.
 
-The Desktop engine is the default for new Desktop jobs. The extraction engine selector offers browser processing for an individual job. The app shows the selected engine, the available capability/IR version, the engine used, and any fallback. A Companion error can move the current uncommitted batch to browser extraction; user cancellation does not start another extraction.
+Desktop runs bounded registered Tauri commands in-process. It has no local HTTP listener and the frontend is not granted general filesystem or shell access.
 
-Workspace checkpoints, preferences, and the activity log continue to use the browser application's IndexedDB store. Tauri's stable application identifier and per-user data directories keep WebView data outside the install directory; job input files use the user cache directory and are removed with the job service. Use **Export checkpoint** for a portable backup and **Import workspace** to restore it in another installation or browser profile. Desktop and browser profiles are separate; there is no automatic database bridge between them.
+## Runtime resources
 
-The Desktop build omits the PWA service worker and embeds its frontend assets in the app. The native CI currently verifies the desktop frontend, IPC adapter, native provider, package contents, and installer resource paths. A packaged WebView test must still verify launch, worker/WASM startup, offline reload, and IndexedDB recovery through restart and upgrade before a public release is considered ready.
+The target-specific resource tree includes:
+- PDFium for the host target.
+- Fast and Best OCR data for English, Russian, Persian, and Simplified Chinese.
+- Native OCR libraries where required by the host.
+- Project and upstream license notices, source/runtime manifests, file sizes, and SHA-256 checksums.
 
-## Native resources and notices
+`prepare-runtime.mjs` downloads only pinned sources and verifies the PDFium archive and model revisions. The bundle step assembles host-native OCR libraries, writes the final manifest, and fails when required files, notices, or checksums are missing. Packaged-runtime release smoke checks run digital-text and raster-OCR extraction against the files staged from each platform installer.
 
-The Tauri resource tree uses this layout:
-
-```text
-runtime/
-  pdfium/<target library>
-  tessdata/fast/{eng,rus,fas,chi_sim}.traineddata
-  tessdata/best/{eng,rus,fas,chi_sim}.traineddata
-  lib/<target native OCR dependencies>       # Linux and macOS
-  notices/                                    # project and third-party license texts
-  runtime-source-manifest.json
-  runtime-manifest.json                       # per-file SHA-256 and sizes
-```
-
-`prepare-runtime.mjs` verifies the pinned PDFium archive hash, fetches OCR models from pinned Tesseract commits, and writes project and upstream notices. The Tauri pre-bundle step collects target-native Tesseract/Leptonica libraries, writes the final manifest, and fails if required models, notices, or checksums are missing. Linux and macOS runtime lookup uses Tauri's resource path. The PDFium and model paths are not derived from the current working directory.
-
-The app process exposes only the bounded registered job commands. The frontend has no Tauri filesystem or shell plugin and the packaged app does not use a local HTTP listener.
+Runtime paths are derived from the app resource directory, not the current working directory. `npm run desktop:prepare` reuses resources only when their target manifest and pinned file checksums match the current OS/architecture. If the manifest names another target, use a separate checkout for that OS; do not clean the other target's resources. If resources are incomplete or stale in a checkout dedicated to the current target, recover from the repository root with `npm run desktop:clean:runtime` followed by `npm run desktop:prepare`. The cleaner removes only recognized generated entries and refuses unknown contents.
 
 ## Local development
 
-Use Node.js 22 and the Rust toolchain pinned in `companion/rust-toolchain.toml`. Install the host's Tauri/WebView prerequisites and Tesseract/Leptonica development libraries first. Keep a separate checkout for each development OS, including Windows and WSL: Tauri's native npm binding and `resources/runtime` contents are target-specific. The root npm workspace installs both frontend and Tauri build tools from one lockfile. Use `npm ci --include=optional` so npm installs the platform-specific Tauri CLI package.
+Use Node.js 22 and the Rust toolchain pinned in `companion/rust-toolchain.toml`. Keep a separate checkout for each OS target, including separate Windows and WSL/Linux checkouts: the optional Tauri CLI binding, generated runtime data, and native build outputs are host-specific. For WSL, keep the Linux checkout in the WSL filesystem, for example `~/src/glyph-mend`, rather than a Windows-mounted path such as `/mnt/f/Projects/glyph-mend`. Microsoft recommends keeping Linux-tool projects in the WSL filesystem for performance and to avoid cross-OS file handling ([Working across file systems](https://learn.microsoft.com/en-us/windows/wsl/filesystems)). Install the platform prerequisites before starting the app.
 
-On Windows, install the Microsoft C++ Build Tools and select the **Desktop development with C++** workload, including the x64/x86 MSVC tools and a Windows SDK. This project builds the `x86_64-pc-windows-msvc` Rust target, which needs `link.exe`. Run development commands from **Developer PowerShell for Visual Studio** so the MSVC tools are available on `PATH`. Tauri also requires Microsoft Edge WebView2 for Windows development. See [Tauri's Windows prerequisites](https://v2.tauri.app/start/prerequisites/#windows) and [Microsoft's MSVC Build Tools guide](https://learn.microsoft.com/en-us/cpp/overview/acquire-msvc?view=msvc-170).
+### Windows
 
-On Ubuntu 24.04 and WSL, install the Linux packages used by the CI and packaging jobs:
+Install Microsoft C++ Build Tools with the **Desktop development with C++** workload, including the x64/x86 MSVC tools and a Windows SDK. This project builds `x86_64-pc-windows-msvc` and needs `link.exe` on `PATH`. Run the command from Developer PowerShell for Visual Studio. Windows development also requires Microsoft Edge WebView2. See [Tauri's Windows prerequisites](https://v2.tauri.app/start/prerequisites/#windows) and [Microsoft's MSVC Build Tools guide](https://learn.microsoft.com/en-us/cpp/overview/acquire-msvc?view=msvc-170).
+
+### Ubuntu and WSL
+
+Install the Linux packages used by the build and packaging workflow:
 
 ```bash
 sudo apt-get update
@@ -69,33 +70,49 @@ sudo apt-get install -y build-essential curl wget file libxdo-dev libssl-dev \
   libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config patchelf
 ```
 
-On macOS, install the Xcode Command Line Tools and the native OCR build dependencies with `brew install tesseract leptonica pkg-config`. Use Tauri's [platform prerequisites](https://v2.tauri.app/start/prerequisites/) for host-specific system packages and tooling.
+See Tauri's [platform prerequisites](https://v2.tauri.app/start/prerequisites/) for the current host package requirements.
 
-Run the single desktop development command from the repository root:
+### macOS
+
+Install Xcode Command Line Tools and native OCR build dependencies:
+
+```bash
+brew install tesseract leptonica pkg-config
+```
+
+### Commands
+
+Run all npm commands from the repository root:
 
 ```bash
 npm ci --include=optional
 npm run dev:desktop
 ```
 
-`dev:desktop` prepares the pinned runtime and starts Tauri. Tauri's `beforeDevCommand` starts the shared Vite frontend at `http://127.0.0.1:1420`, and `devUrl` loads that server in the native WebView; development no longer depends on an old generated `dist/` directory. The installer path remains a bundled production build. For release packaging use `npm run build:desktop`. `npm run build:desktop:web` builds only the desktop-mode frontend. `npm run desktop:prepare` prepares runtime data explicitly, while `npm run desktop:clean:runtime` removes recognized generated data.
+This is the single Desktop development command. It prepares the current OS's pinned runtime, then starts Tauri. Tauri's `beforeDevCommand` starts the shared Vite frontend in desktop mode at `http://127.0.0.1:1420`, which is loaded through `devUrl`. Development does not depend on a previously generated `dist` directory. Installer builds keep the production frontend path:
 
-Runtime preparation is idempotent when the current checkout already contains verified resources for the same target. If it finds missing, stale, or mismatched resources, it fails with the exact cleanup command. Run `npm run desktop:clean:runtime` and then `npm run desktop:prepare`; the cleaner refuses unrecognized top-level entries in `resources/runtime`. Do not put user data inside generated runtime directories. Do not switch OS targets inside one checkout. Use separate Windows and WSL/Linux checkouts so the runtime and npm optional native binary remain isolated. Windows development also requires the Microsoft C++ Build Tools and a Developer PowerShell with `link.exe` on `PATH`.
+```bash
+npm run build:desktop
+```
 
-### Known WSL2 development issue
+For browser pairing with the local engine during development, use `npm run dev:companion`. For the installed app, start GlyphMend with the `--headless-companion` argument. The app hides its window, starts the existing loopback bridge, and opens the one-time pairing URL. To use browser-only mode, launch the browser app without pairing.
 
-WSL2/WSLg launch is not currently verified. In the latest reported runs, Tauri starts but the window remains blank or gray. The same result was reported with `WEBKIT_DISABLE_DMABUF_RENDERER=1` and with `GDK_BACKEND=x11`; neither is a confirmed fix. Keep WSL2 as a separate Linux checkout, and do not treat a successful process start as a successful UI launch. The repository has no verified workaround yet. Native Linux and Windows launch behavior must be checked independently from WSLg.
+### Reported WSL2 issue
+
+WSL2/WSLg is not visually verified. The reported commands ran from `/mnt/f/Projects/glyph-mend`, where runtime preparation found existing resources for another OS target; continuing with the direct `tauri dev` command bypassed that failed preparation. Use a separate WSL checkout under the Linux filesystem and the root `npm run dev:desktop` command, which prepares resources before launching and stops on a target mismatch. The Tauri launcher warns when it is run from a Windows-mounted WSL path.
+
+The latest user-reported runs also showed a blank or gray window with `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `GDK_BACKEND=x11`. The Tauri dev launcher now detects WSL and sets `WEBKIT_DISABLE_COMPOSITING_MODE=1` for that development session unless the caller already set the variable. Tauri documents this as an optional Wayland workaround that may resolve black WebKit views ([Linux distribution guide](https://github.com/tauri-apps/tauri-docs/blob/v2/src/content/docs/distribute/flatpak.mdx#L356)); it has not yet been confirmed on this WSL setup. Run the single root command above and confirm that the GlyphMend interface renders. A successful process start is not a successful UI launch. Check WSLg, native Linux, and Windows separately.
 
 ## Release process
 
-The consolidated CI workflow runs lightweight checks automatically for pull requests and pushes to `main`. Its manually selected `full` mode runs the moved test suites and native compilation checks. The single `platform-release.yml` workflow builds the browser package, standalone Companion packages, and Desktop installers under one prerelease version, then creates one unsigned **draft prerelease** after all packaging and runtime smoke checks pass. The draft is not public until a maintainer publishes it.
+The only Actions workflow runs on manual dispatch; it has no automatic push, pull-request, schedule, or tag trigger. The `quick`, `full`, `benchmark`, and `release` modes are all explicit selections. In `release`, the quick web checks, Rust checks, and shared SemVer prerelease calculation run in parallel. Package jobs wait for those results, then build the browser artifact and four integrated Desktop installers, inspect package contents, and run both packaged-engine smoke cases per target. If all outputs succeed, the workflow creates one unsigned draft prerelease. It creates no standalone Companion packages and does not publish the draft automatically.
 
-Do not create a release tag, publish a draft, or distribute installers as part of ordinary code implementation. Stable releases need configured signing/notarization and a clean-machine install, offline, restart, and upgrade validation run.
+Stable distribution still requires signing/notarization and clean-machine validation of install, offline launch, restart, workspace recovery, and upgrade. See [distribution status](distribution-plan.md) and [the unified CI guide](ci.md).
 
 ## Related guides
 
 - [Browser operations](browser.md)
 - [Companion engine and loopback API](companion-engine.md)
 - [Distribution status and release gates](distribution-plan.md)
-- [CI/CD and release workflows](ci.md)
+- [Validation and release workflow](ci.md)
 - [Compliance and data handling](compliance.md)

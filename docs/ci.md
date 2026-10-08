@@ -1,78 +1,85 @@
-# CI/CD and releases
+# Validation and release workflow
 
-## Workflow model
+## Workflow entry point
 
-`.github/workflows/platform-ci.yml` is the single CI entry point. Pull requests and pushes to `main` run lightweight licensing and dependency checks, lint, typecheck, browser and Desktop frontend builds, Rust formatting, Clippy, compilation, and Cargo dependency policy checks. The automatic path does not run test suites or a native four-platform build matrix.
+`.github/workflows/platform-ci.yml` is the repository's only GitHub Actions workflow, and it runs only when manually dispatched from the Actions page with **Run workflow**. It has no push, pull-request, schedule, or tag trigger. Every check, benchmark, and release is an explicit manual selection.
 
-Manual dispatch offers three modes:
+Choose one mode:
 
-| Mode | Runs |
+| Mode | What it runs |
 | --- | --- |
-| `quick` | The same lightweight checks used for pull requests and pushes, with the browser build artifact uploaded. |
-| `full` | The lightweight checks, browser tests, Rust workspace tests, Tauri adapter and service tests, browser-to-Companion integration, and native compilation checks across the supported Desktop targets. |
-| `benchmark` | The paired browser/Companion benchmark with selected repeat count and OCR model. Before measurement, its runner also executes browser license, lint, typecheck, test, and production-build checks. |
+| `quick` | npm licensing and production dependency audit, lint, typecheck, generated-brand check, and browser and Desktop frontend builds. Manual `quick` also uploads the browser build. It does not install the Rust toolchain, run test suites, or create installers. |
+| `full` | All quick checks, Rust formatting, Clippy, Tauri host compilation, Rust dependency policy, browser tests, Rust workspace and Companion integration tests, Tauri adapter/service tests, and native Tauri compilation checks across Windows x64, Ubuntu x64, macOS Intel, and Apple silicon. |
+| `benchmark` | Repeated paired browser/Companion extraction measurements for the selected OCR model and repeat count. The benchmark preflight also runs the browser license, lint, typecheck, test, and build checks. |
+| `release` | Runs the quick web and Rust checks alongside shared prerelease-version calculation. Package jobs wait for those checks and the version, build the browser artifact and four integrated Desktop installers, and smoke-test each packaged native engine before creating one draft GitHub prerelease. |
 
-No test suite runs on pull requests or pushes to `main`. The `full` mode runs the complete moved validation set; `benchmark` is also manually selected and runs the browser test suite as a benchmark preflight. A workflow definition is not evidence of a successful run; review the Actions run for the revision under consideration.
+None of the test suites run in `quick`. All four modes are manual selections; `full`, `benchmark`, and `release` are deliberately separate from the fast path. A workflow definition or local build is not evidence that a hosted run passed; inspect the run for the revision being considered.
 
 ## Root npm workspace
 
-Use Node.js 22 and run npm commands from the repository root. `package.json` and the root `package-lock.json` cover both `web-app` and the Tauri build tools. For Desktop, install optional platform dependencies with `npm ci --include=optional` and keep a separate checkout for each OS target, including Windows and WSL.
-
-~~~bash
-npm ci
-npm run dev:web
-npm run build:web
-npm run lint
-npm run typecheck
-~~~
-
-`npm run build:web` synchronizes branding, verifies browser-only build boundaries and MuPDF assets, then creates `web-app/dist`. Deploying that directory to the public site is a separate operation.
-
-For Desktop development and packaging:
-
-~~~bash
-npm ci --include=optional
-npm run dev:desktop
-npm run build:desktop
-~~~
-
-`dev:desktop` prepares the target's pinned local runtime and starts the shared Vite UI at the Tauri development URL. `build:desktop` keeps the production frontend bundling path and creates the platform installer. Root commands:
+Use Node.js 22 and run npm commands from the repository root. The root `package.json` and `package-lock.json` include the web frontend and Tauri build tools.
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev:web` | Run the browser/PWA development server. |
+| `npm ci` | Install the shared JavaScript workspaces for browser work. |
+| `npm ci --include=optional` | Install the host's optional Tauri CLI package for Desktop work. Keep one checkout per OS target. For WSL, use a checkout under the Linux filesystem, not `/mnt/<drive>`. |
+| `npm run dev:web` | Start the browser/PWA Vite server. |
 | `npm run build:web` | Build and verify the browser/PWA in `web-app/dist`. |
-| `npm run dev:desktop` | Prepare host runtime resources and start the Tauri app with the shared Vite UI. |
-| `npm run build:desktop` | Prepare resources and notices, build the production Desktop frontend, package the native installer, and verify runtime manifests. |
-| `npm run build:desktop:web` | Build only the desktop-mode frontend for Tauri. |
-| `npm run desktop:prepare` | Fetch and verify pinned PDFium and OCR model resources for the current OS checkout. |
-| `npm run desktop:clean:runtime` | Remove recognized generated runtime data; refuses unrecognized top-level entries. |
-| `npm run desktop:verify:runtime` | Verify the prepared/assembled resources and their checksums. |
+| `npm run dev:desktop` | Prepare pinned host resources and start the shared frontend inside Tauri using the loopback Vite dev server. |
+| `npm run dev:companion` | Start the same Tauri app in headless Companion mode, paired to the local desktop-mode Vite origin. |
+| `npm run build:desktop:web` | Build only the Desktop-mode frontend. |
+| `npm run build:desktop` | Prepare resources and notices, build the production frontend, create a native installer, and verify its runtime manifest. |
+| `npm run desktop:prepare` | Fetch and verify the pinned PDFium and OCR model resources for the current OS. |
+| `npm run desktop:clean:runtime` | Reset stale runtime data in a checkout dedicated to the current OS/architecture target. Use a separate checkout for another target. |
+| `npm run desktop:verify:runtime` | Validate the prepared runtime files, target, manifest, and checksums. |
 | `npm run desktop:licenses` | Collect browser and Rust dependency notices for the Desktop package. |
 | `npm run desktop:icon` | Regenerate Tauri platform icons from the brand source asset. |
-| `npm run brand:sync` | Regenerate browser brand assets and PWA metadata from `branding.json`. |
-| `npm run lint` / `npm run typecheck` | Run the browser source quality checks. |
-| `npm run test` | Run the browser test suite locally; CI runs it only in manually selected modes. |
-| `npm run license:check` | Check browser dependency licensing against the root lockfile. |
+| `npm run lint` / `npm run typecheck` | Check browser source quality and types. |
+| `npm test` | Run the browser test suite locally. In GitHub Actions it runs only in `full` or the benchmark preflight. |
+| `npm run license:check` | Check browser dependency licensing against the shared lockfile. |
+| `npm run release:next-version` | Print the next shared SemVer prerelease from version tags and commit history. |
 
-See the [Desktop guide](desktop.md) for native prerequisites, the unresolved WSL2 rendering issue, and runtime recovery.
+The Desktop development command uses `devUrl` at `http://127.0.0.1:1420`. Tauri's `beforeDevCommand` starts the shared Vite app in desktop mode. Installer builds continue to use the bundled production frontend. The dev launcher also applies Tauri's optional WebKit compositor workaround only for WSL sessions. See the [Desktop guide](desktop.md) for native prerequisites, runtime recovery, and the reported WSL2 blank-window issue.
 
-## Manual full validation and benchmarks
+## Manual full validation
 
-The `full` mode runs `npm test`, `cargo test --workspace --exclude companion-tauri`, the browser-to-Companion runtime integration, `node --test` for the Tauri adapter, and Tauri service/IPC tests. It also compiles the native Desktop host on Windows x64, Ubuntu x64, macOS Intel, and Apple silicon. This heavier work is intentionally user-selected rather than part of routine pull-request CI. The separate `benchmark` mode also runs the browser license, lint, typecheck, test, and build checks before it measures the six-document corpus.
+The `full` mode runs the Rust quality and host compilation checks alongside the retained browser tests, Rust workspace tests, browser-to-Companion runtime integration, Tauri adapter tests, Tauri service and bounded-IPC tests, and native target compilation. Run it manually when a change needs broad validation. The four-platform job builds the native host without producing installers.
 
-The `benchmark` mode repeats paired measurements on the labeled six-document corpus and uploads raw/evaluated evidence. It is a manual measurement, not a release claim. Stable Companion promotion remains blocked until repeated, reproducible results and browser regression evidence pass the checked-in gate.
+The `benchmark` mode runs the paired six-document corpus with the selected number of repetitions and OCR model, then uploads raw and evaluated evidence. Its runner performs browser license, lint, typecheck, test, and production-build preflight checks before measuring. A benchmark is measurement evidence, not a product performance claim. Stable Rust-provider promotion requires the checked-in promotion gate and browser regression evidence for every corpus class.
+
+## Review of Actions run 37810064919
+
+The [reviewed workflow run](https://github.com/tahamoeini/glyph-mend/actions/runs/37810064919) ran the earlier release workflow definitions. The authenticated Actions job logs show that validation succeeded, browser packaging failed, and the Ubuntu and both macOS Desktop package jobs failed. The Windows package jobs and draft-release job were cancelled before completion, so they were not verified as passing or failing.
+
+- Browser packaging tried to copy `web-app/DEPENDENCIES.md`, which was not generated. Release packaging now generates and checks the report with `web-app/scripts/license-report.mjs --check` before assembling the browser archive.
+- The raster-only OCR runtime smoke failed on Ubuntu and both macOS architectures even though digital-text extraction passed. The macOS OCR output was `ISL YPAMEND`, which recovered the final `MEND` portion but not the entire custom bitmap word; the Ubuntu job ended with a failed extraction state, and its old test did not print the service events needed to explain that state. The current smoke uses the shorter raster token `MEND` and prints terminal service events and fallback diagnostics on failure. That adjustment has not yet passed in a hosted run. If it passes, it confirms recovery of this smoke token from a raster page; benchmark runs remain the evidence for accuracy. A successful release run is still required to verify the adjustment on every target.
+- The browser job failed at its package assembly step, before SBOM generation and artifact upload. The Ubuntu standalone Companion package did succeed; the Windows Companion jobs, Windows Desktop package, and draft-release gate were cancelled before completion. The run did not create a release.
+- The run warned that `actions/upload-artifact` v4.6.2 still targeted Node.js 20 and was being forced onto Node.js 24. The consolidated workflow now pins upload-artifact v7.0.0 for browser, benchmark, and release artifacts.
+
+The previous workflow produced separate Companion and Desktop package sets. Those workflows are removed; the consolidated release produces the browser package and one integrated Desktop installer per configured target. The reviewed run is historical evidence for that earlier workflow only; a successful run of the current revision is still required to confirm current release packaging and smoke checks.
 
 ## Versioned release
 
-Manually dispatch `.github/workflows/platform-release.yml` from `main` and provide one prerelease version, such as `2.1.0-beta.1`. This is the only user-facing release entry point. It builds the browser distribution, six standalone Companion packages, and four Desktop installers in parallel; reusable Companion and Desktop packaging workflows are called internally. The Desktop job validates packaged runtimes with native digital-PDF and raster-only-PDF extraction smoke tests and checks installer contents. The parent then creates one unsigned draft prerelease tagged `glyphmend-v<version>`. Assets include checksums, product notices, SPDX SBOMs, and provenance attestations. The draft remains unpublished until a maintainer reviews and publishes it.
+Manually dispatch `platform-ci.yml` from the default branch and select `release`. The workflow runs the quick web checks, Rust quality/compilation checks, and next-version calculation in parallel. Package jobs wait for the checks and version. Run `npm run release:next-version` locally to preview it. The script uses the highest valid `glyphmend-v*` tag after the first unified release. Until that tag exists, it uses the root package version as the baseline and includes the commit that first introduced the root package; old `companion-v*` tags are excluded because they versioned the separate engine, not this unified app.
 
-The Windows installer uses the WebView2 bootstrapper and may need network access when WebView2 is absent. Stable public distribution requires code signing on Windows, signing and notarization on macOS, and clean-machine validation. See [distribution status](distribution-plan.md).
+Version impact follows Conventional Commits:
 
-## Dependency and extraction upgrades
+Use commit subjects in the form `<type>(optional-scope)!: summary`. For example, `feat(desktop): bundle the local engine`, `fix(ci): preserve the browser dependency report`, or `chore(docs): clarify manual validation`. A breaking change may use `!` after its type or a `BREAKING CHANGE:` footer.
 
-- **JavaScript packages:** update the relevant workspace `package.json` and regenerate the single root `package-lock.json`; run the license and dependency checks.
-- **Rust crates:** update the relevant Cargo.toml and Cargo.lock; keep the pinned toolchain intentional and run `cargo deny check`.
-- **PDFium and OCR models:** the Desktop runtime preparation script is the pin/hash source of truth. Update its pins deliberately and regenerate notices and runtime manifests through packaging.
-- **Extraction behavior:** when changing extraction semantics or cached result compatibility, review `EXTRACTION_VERSION` and checkpoint invalidation in `web-app/src/app.js`. Do not bump it for unrelated UI changes.
-- **Branding:** edit root `branding.json` and source assets, then use `npm run brand:sync` (the frontend lifecycle scripts also run it automatically).
+- Breaking-change markers produce a major increment.
+- `feat` produces a minor increment.
+- `fix` and `perf` produce a patch increment.
+- `build`, `chore`, `ci`, `docs`, `refactor`, `revert`, `style`, and `test` do not increment the version by themselves.
+- Unrecognized or nonconventional commit messages default to the `feat` increment. If there are no release-bearing commits, version calculation stops with an error.
+
+The browser artifact includes the static site, license text, generated dependency report, third-party notices, checksum, SPDX SBOM, and provenance. Before SBOM generation, the release workflow synchronizes the calculated version across the root manifest, browser manifest, and root lockfile. Desktop jobs produce Windows x64 NSIS, Ubuntu 24.04 x64 `.deb`, macOS Intel `.dmg`, and Apple silicon `.dmg` packages with the same version. Each Desktop job inspects the packaged resources and runs digital-text plus raster-OCR extraction smoke checks against those packaged resources. One unsigned draft prerelease is created only after every package job succeeds; it is not published automatically.
+
+Stable distribution still requires Windows code signing, macOS signing and notarization, and clean-machine install and upgrade validation. Windows installation may need network access to obtain WebView2 when it is absent. See [distribution status](distribution-plan.md).
+
+## Updating dependencies and runtime data
+
+- **JavaScript:** update the relevant workspace manifest and regenerate the root `package-lock.json`. Run the license and production dependency checks manually.
+- **Rust:** update the relevant manifest and `companion/Cargo.lock`; preserve the pinned toolchain and resolve `cargo deny check` findings deliberately.
+- **PDFium and OCR models:** update the pins and hashes in the Desktop runtime preparation script, then regenerate notices and manifests through packaging.
+- **Extraction semantics:** review `EXTRACTION_VERSION` and checkpoint invalidation in `web-app/src/app.js` when changing extraction behavior or cached result compatibility.
+- **Branding:** edit root `branding.json` and source assets, then run `npm run brand:sync`.

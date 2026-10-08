@@ -1,27 +1,19 @@
-# Companion dependency record
+# GlyphMend engine dependency record
 
-The Companion uses native system libraries at runtime. Release archives contain
-the platform PDFium library, Tesseract and Leptonica runtime libraries, and Fast
-and Best OCR model sets for English, Russian, Persian, and Simplified Chinese.
-The release workflow records resolved versions and SHA-256 digests in each
-archive.
+This record describes the Rust engine and the target-specific runtime bundled inside the integrated GlyphMend Desktop app. The same engine can be exposed to the browser by running the app in headless Companion mode. GlyphMend does not publish separate Companion runtime archives.
 
 | Component | Source / pinned line | Purpose |
 | --- | --- | --- |
-| Rust toolchain | 1.97.0 (`rust-toolchain.toml`) | Companion host and extractor |
-| `pdfium-render` | 0.9.4, `thread_safe` feature | PDF text, page geometry, objects, and rendering |
-| PDFium runtime | Chromium release `8066` | Native PDF engine, packaged beside the executable |
-| `leptess` / Tesseract | leptess 0.14.0; platform Tesseract package resolved at release | Multilingual OCR through Tesseract |
-| Leptonica | Platform package resolved at release | Image input for Tesseract |
-| Fast models | `tesseract-ocr/tessdata_fast`, `eng`, `rus`, `fas`, and `chi_sim` traineddata | Default Fast OCR choice for the selected language |
-| Best models | `tesseract-ocr/tessdata_best`, `eng`, `rus`, `fas`, and `chi_sim` traineddata | Optional High Accuracy OCR choice for the selected language |
-| REST service | Axum 0.8.9 / Tokio 1.53.1 | Authenticated loopback API |
+| Rust toolchain | 1.97.0 (`rust-toolchain.toml`) | Shared service, providers, loopback bridge, and Tauri host |
+| `pdfium-render` | 0.9.4, `thread_safe` feature | PDF text, page geometry, page objects, and rendering |
+| PDFium runtime | Chromium release `8066` | Native PDF engine; target library and archive hash are pinned in runtime preparation |
+| `leptess` / Tesseract | leptess 0.14.0; host package used to build the app | Multilingual OCR |
+| Leptonica | Host package used to build the app | Image input for Tesseract |
+| Fast models | `tesseract-ocr/tessdata_fast`: `eng`, `rus`, `fas`, `chi_sim` | Default Fast OCR option |
+| Best models | `tesseract-ocr/tessdata_best`: `eng`, `rus`, `fas`, `chi_sim` | Optional High Accuracy OCR option |
+| Loopback service | Axum 0.8.9 / Tokio 1.53.1 | User-paired browser connection in headless mode |
+| Desktop transport | Tauri IPC | Bounded in-process calls from the integrated interface |
 
-`cargo deny check` applies the repository's advisory and license policy to the
-Rust dependency graph. Release archives also contain third-party notices, an
-SPDX SBOM, a runtime manifest, and checksums. The SBOM and runtime manifest
-capture platform-native libraries and model digests that Cargo metadata alone
-does not describe.
+`cargo deny check` applies the advisory and license policy in `companion/deny.toml`. Desktop packaging records resolved native runtime versions and hashes in its manifests and includes upstream notices, an SPDX SBOM, and checksums. Cargo metadata alone does not describe platform-native libraries or model files.
 
-The model sets have different speed and accuracy profiles; see the
-[Tesseract data-file documentation](https://github.com/tesseract-ocr/tessdoc/blob/main/Data-Files.md).
+Runtime resource pins and preparation instructions are maintained in `companion/apps/companion-tauri/src-tauri/scripts/prepare-runtime.mjs`. See the Tesseract project's [data-file guide](https://github.com/tesseract-ocr/tessdoc/blob/main/Data-Files.md) for model tradeoffs.

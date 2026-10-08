@@ -17,6 +17,11 @@ import { fileURLToPath } from "node:url";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDir, "../../../../..");
 const runtimeDir = path.resolve(scriptDir, "../resources/runtime");
+const isWsl = process.platform === "linux" && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
+const isWslWindowsMount = isWsl && /^\/mnt\/[a-z](?:\/|$)/i.test(repositoryRoot.replaceAll("\\", "/"));
+const wslCheckoutNote = isWslWindowsMount
+  ? " WSL checkouts should live under the Linux filesystem (for example ~/src/glyph-mend), not under /mnt/<drive>; keep their npm modules and generated runtime separate from Windows."
+  : "";
 const pdfiumRelease = "chromium/8066";
 const tessdataCommits = {
   fast: "87416418657359cb625c412a48b6e1d6d41c29bd",
@@ -128,6 +133,17 @@ if (!targetConfig || targetConfig.os !== (process.platform === "win32" ? "window
 }
 
 const sourceManifestPath = path.join(runtimeDir, "runtime-source-manifest.json");
+const existingRuntimeTarget = readRuntimeTarget();
+if (existingRuntimeTarget && existingRuntimeTarget !== target) {
+  throw new Error(
+    `Desktop runtime resources in this checkout target ${existingRuntimeTarget}, but this process targets ${target}. `
+    + "Use a separate checkout for each OS/architecture target; do not clean resources used by another target. "
+    + wslCheckoutNote
+    + `From the repository root in a ${target}-specific checkout, run `
+    + "`npm ci --include=optional` and `npm run desktop:prepare`.",
+  );
+}
+
 if (hasMatchingRuntime()) {
   console.log(`GlyphMend Desktop runtime resources are already prepared for ${target}.`);
   process.exit(0);
@@ -146,16 +162,20 @@ const generatedNoticePaths = [
 if (unexpected.length || generatedNoticePaths.some((name) => existsSync(path.join(runtimeDir, "notices", name)))) {
   throw new Error(
     `Desktop runtime data already exists at ${runtimeDir}, but it does not match ${target}. `
-    + "From the repository root, run `npm run desktop:clean:runtime` to remove recognized generated files, "
-    + "then prepare again. Keep Windows and WSL in separate checkouts.",
+    + "If this checkout is dedicated to that target, recover from the repository root with "
+    + "`npm run desktop:clean:runtime` followed by `npm run desktop:prepare`. "
+    + "Do not clean resources used by another OS target; use a separate checkout instead."
+    + wslCheckoutNote,
   );
 }
 for (const name of ["pdfium", "tessdata", "lib", "runtime-source-manifest.json", "runtime-manifest.json"]) {
   if (existsSync(path.join(runtimeDir, name))) {
     throw new Error(
       `Desktop runtime data already exists at ${path.join(runtimeDir, name)}, but it does not match ${target}. `
-      + "From the repository root, run `npm run desktop:clean:runtime` to remove recognized generated files, "
-      + "then prepare again. Keep Windows and WSL in separate checkouts.",
+      + "If this checkout is dedicated to that target, recover from the repository root with "
+      + "`npm run desktop:clean:runtime` followed by `npm run desktop:prepare`. "
+      + "Do not clean resources used by another OS target; use a separate checkout instead."
+      + wslCheckoutNote,
     );
   }
 }
@@ -249,6 +269,15 @@ function mkdtempRuntime() {
   const temporaryRoot = path.join(os.tmpdir(), `glyphmend-runtime-${process.pid}-${Date.now()}`);
   mkdirSync(temporaryRoot, { recursive: true });
   return temporaryRoot;
+}
+
+function readRuntimeTarget() {
+  if (!existsSync(sourceManifestPath)) return null;
+  try {
+    return JSON.parse(readFileSync(sourceManifestPath, "utf8")).target || null;
+  } catch {
+    return null;
+  }
 }
 
 function hasMatchingRuntime() {
