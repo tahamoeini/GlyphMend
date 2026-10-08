@@ -2,13 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { getSpdxText } from "../../../../../web-app/scripts/spdx-license-text.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDir, "../../../../..");
 const companionRoot = path.join(repositoryRoot, "companion");
 const noticesDir = path.resolve(scriptDir, "../resources/runtime/notices/rust");
-const target = process.env.TARGET;
-const licenseTextCache = new Map();
+const sourceManifestPath = path.resolve(scriptDir, "../resources/runtime/runtime-source-manifest.json");
+const target = process.env.TARGET || (fs.existsSync(sourceManifestPath)
+  ? JSON.parse(fs.readFileSync(sourceManifestPath, "utf8")).target : undefined);
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -34,16 +36,6 @@ function exceptionIds(expression) {
     result.push(match[1]);
   }
   return [...new Set(result)];
-}
-
-async function spdxLicense(id) {
-  if (licenseTextCache.has(id)) return licenseTextCache.get(id);
-  const response = await fetch(`https://spdx.org/licenses/${encodeURIComponent(id)}.txt`);
-  if (!response.ok) throw new Error(`SPDX license text ${id} is unavailable (${response.status}).`);
-  const text = await response.text();
-  if (!text.trim()) throw new Error(`SPDX license text ${id} is empty.`);
-  licenseTextCache.set(id, text);
-  return text;
 }
 
 function findLicenseFiles(directory, declaredFile) {
@@ -107,7 +99,7 @@ for (const id of [...included].filter((item) => item !== root.id).sort()) {
     } else {
       for (const licenseId of ids) {
         try {
-          fs.writeFileSync(path.join(noticePath, `SPDX-${licenseId}.txt`), await spdxLicense(licenseId));
+          fs.writeFileSync(path.join(noticePath, `SPDX-${licenseId}.txt`), await getSpdxText(licenseId));
         } catch (error) {
           failures.push(`${packageInfo.name}@${packageInfo.version}: ${error.message}`);
         }
@@ -116,10 +108,7 @@ for (const id of [...included].filter((item) => item !== root.id).sort()) {
   }
   for (const exceptionId of exceptionIds(packageInfo.license || "")) {
     try {
-      const response = await fetch(`https://spdx.org/licenses/exceptions/${encodeURIComponent(exceptionId)}.txt`);
-      if (!response.ok) throw new Error(`SPDX exception text ${exceptionId} is unavailable (${response.status}).`);
-      const text = await response.text();
-      if (!text.trim()) throw new Error(`SPDX exception text ${exceptionId} is empty.`);
+      const text = await getSpdxText(exceptionId);
       fs.writeFileSync(path.join(noticePath, `SPDX-exception-${exceptionId}.txt`), text);
     } catch (error) {
       failures.push(`${packageInfo.name}@${packageInfo.version}: ${error.message}`);

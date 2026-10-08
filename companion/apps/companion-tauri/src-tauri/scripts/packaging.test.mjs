@@ -7,6 +7,60 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { hasVerifiedPdfium, sha256 } from "./runtime-integrity.mjs";
 import { collectMacDependencyGraph, parseOtoolDependencies } from "./macos-dependencies.mjs";
+import { isNewerMacVersion, selectMacPackageMinimum } from "./macos-package-policy.mjs";
+import { createSpdxTextFetcher, SPDX_DATA_COMMIT } from "../../../../../web-app/scripts/spdx-license-text.mjs";
+
+test("uses a macOS host's patch minimum consistently and never lowers the configured floor", () => {
+  assert.equal(selectMacPackageMinimum("15.0", "15.7.5"), "15.7.5");
+  assert.equal(isNewerMacVersion("15.7.5", selectMacPackageMinimum("15.0", "15.7.5")), false);
+  assert.equal(selectMacPackageMinimum("16.0", "15.7.5"), "16.0");
+  assert.equal(isNewerMacVersion("15.10", "15.7.5"), true);
+  assert.equal(isNewerMacVersion("15.0.0", "15.0"), false);
+  assert.throws(() => selectMacPackageMinimum("15.0", "unknown"), /Invalid macOS/);
+});
+
+test("loads libpng from immutable SPDX data, retries transient HTTP failures, and caches success", async () => {
+  const urls = [];
+  const getText = createSpdxTextFetcher(async (url) => {
+    urls.push(url);
+    return urls.length === 1 ? { ok: false, status: 503 }
+      : { ok: true, text: async () => "PNG Reference Library License version 2" };
+  });
+  assert.match(await getText("libpng-2.0"), /PNG Reference/);
+  await getText("libpng-2.0");
+  assert.equal(urls.length, 2);
+  assert.equal(urls[0], `https://raw.githubusercontent.com/spdx/license-list-data/${SPDX_DATA_COMMIT}/text/libpng-2.0.txt`);
+});
+
+test("loads SPDX exceptions from the same canonical text directory", async () => {
+  let requested;
+  const getText = createSpdxTextFetcher(async (url) => {
+    requested = url;
+    return { ok: true, text: async () => "LLVM exception text" };
+  });
+  assert.equal(await getText("LLVM-exception"), "LLVM exception text");
+  assert.match(requested, /\/text\/LLVM-exception\.txt$/);
+});
+
+test("retries interrupted SPDX response bodies without caching incomplete text", async () => {
+  let attempts = 0;
+  const getText = createSpdxTextFetcher(async () => ({ ok: true, text: async () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error("connection closed");
+    return "complete license text";
+  } }));
+  assert.equal(await getText("MIT"), "complete license text");
+  assert.equal(attempts, 2);
+});
+
+test("fails missing or malformed license texts rather than silently omitting notices", async () => {
+  let attempts = 0;
+  const missing = createSpdxTextFetcher(async () => { attempts += 1; return { ok: false, status: 404 }; });
+  await assert.rejects(missing("unknown-license"), /unavailable \(404\)/);
+  assert.equal(attempts, 1);
+  const html = createSpdxTextFetcher(async () => ({ ok: true, text: async () => "<!DOCTYPE html><html>error</html>" }));
+  await assert.rejects(html("MIT"), /HTML response/);
+});
 
 function fixture(t) {
   const root = mkdtempSync(path.join(os.tmpdir(), "glyphmend-packaging-"));

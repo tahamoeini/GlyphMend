@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { selectMacPackageMinimum } from "../src-tauri/scripts/macos-package-policy.mjs";
 
 const webDir = path.dirname(fileURLToPath(import.meta.url));
 const tauriDir = path.resolve(webDir, "../src-tauri");
@@ -57,6 +58,19 @@ if (tauriArgs[0] === "build" || tauriArgs[0] === "bundle") {
     tauriEnvironment.TARGET = requestedTarget;
     if (!explicitTarget) tauriArgs.splice(insertIndex, 0, "--target", requestedTarget);
     console.log(`[tauri] Building and assembling runtime resources for ${requestedTarget}.`);
+  }
+  if (process.platform === "darwin") {
+    const hostVersion = spawnSync("sw_vers", ["-productVersion"], { encoding: "utf8" });
+    if (hostVersion.error) throw hostVersion.error;
+    if (hostVersion.status !== 0) throw new Error(`Could not read macOS host version: ${hostVersion.stderr}`);
+    const config = JSON.parse(readFileSync(path.join(tauriDir, "tauri.conf.json"), "utf8"));
+    const minimum = selectMacPackageMinimum(config.bundle.macOS.minimumSystemVersion, hostVersion.stdout.trim());
+    tauriEnvironment.MACOSX_DEPLOYMENT_TARGET = minimum;
+    tauriEnvironment.GLYPHMEND_MACOS_MINIMUM_SYSTEM_VERSION = minimum;
+    const override = JSON.stringify({ bundle: { macOS: { minimumSystemVersion: minimum } } });
+    const configSeparator = tauriArgs.indexOf("--");
+    tauriArgs.splice(configSeparator === -1 ? tauriArgs.length : configSeparator, 0, "--config", override);
+    console.log(`[tauri] macOS package minimum and Rust deployment target: ${minimum}.`);
   }
 }
 if (isWslWindowsMount) {

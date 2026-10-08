@@ -20,8 +20,8 @@ The CLI source in the Rust workspace remains for development and benchmark tooli
 | --- | --- | --- | --- |
 | Windows x64 | NSIS setup `.exe` | Windows x64 | WebView2 bootstrapper; Tesseract/Leptonica use the static `x64-windows-static-md` triplet. PDFium and OCR models are bundled. |
 | Ubuntu 24.04 x64 | `.deb` | Ubuntu 24.04 x64 | WebKitGTK 4.1 and GTK runtime packages are installer dependencies; the native OCR libraries and models are bundled. |
-| macOS Intel | `.dmg` | macOS 15 Intel | Requires macOS 15 or later. No Developer ID signature or notarization; relocated libraries receive ad hoc signatures. Clean-install compatibility still needs validation. |
-| macOS Apple silicon | `.dmg` | macOS 15 Apple silicon | Requires macOS 15 or later. No Developer ID signature or notarization; relocated libraries receive ad hoc signatures. Clean-install compatibility still needs validation. |
+| macOS Intel | `.dmg` | macOS 15 Intel | Exact required version is recorded in the app's Info.plist and runtime manifest, including the build host's patch release. No Developer ID signature or notarization; relocated libraries receive ad hoc signatures. |
+| macOS Apple silicon | `.dmg` | macOS 15 Apple silicon | Exact required version is recorded in the app's Info.plist and runtime manifest, including the build host's patch release. No Developer ID signature or notarization; relocated libraries receive ad hoc signatures. |
 
 These are configured build targets, not a clean-install support guarantee. There is no cross-platform installer. AppImage and Linux ARM are not initial targets.
 
@@ -54,6 +54,8 @@ Runtime paths are derived from the app resource directory, not the current worki
 Packaging relocates native libraries so installers do not depend on the build machine's library paths. The source manifest preserves PDFium's digest from the checksum-verified upstream archive; the assembled manifest separately records `pdfium.bundledFileSha256` after relocation and macOS ad hoc signing. Preparation accepts an assembled library only when its bundle digest and source provenance match, so a subsequent build can reuse verified resources without treating relocation as corruption. Validation checks both manifests and the actual installed or extracted runtime. macOS dependencies are collected recursively from the executable and PDFium's Mach-O references, including versioned Homebrew aliases, and every bundled library is checked for architecture, deployment minimum, and signature. The current Homebrew bottles come from macOS 15 runners; these packages do not claim macOS 12 compatibility.
 
 Tauri's Debian bundler puts resources under `/usr/lib/<productName>` with the configured spelling (`/usr/lib/GlyphMend` currently). Linux executable relocation and CI extraction checks derive that directory from `tauri.conf.json`; the lowercase Debian package name is not the resource directory name.
+
+The configured macOS baseline is 15.0, but hosted Homebrew libraries can require a later patch release. For installer builds the launcher uses the greater of that baseline and the host's full macOS version, then applies it consistently to Rust compilation, Tauri's bundle configuration, and runtime validation. For example, a build on 15.7.5 advertises at least 15.7.5. The installer inspection checks that Info.plist's `LSMinimumSystemVersion` agrees with `runtime-manifest.json`'s `macOS.minimumSystemVersion`. No dylib minimum is rewritten to claim compatibility with an older OS.
 
 ## Local development
 

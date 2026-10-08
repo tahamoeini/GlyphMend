@@ -1,4 +1,5 @@
 name: GlyphMend manual CI and release workflow
+run-name: GlyphMend ${{ inputs.validation }} on ${{ github.ref_name }} at ${{ github.sha }}
 
 on:
   workflow_dispatch:
@@ -155,7 +156,9 @@ jobs:
           sudo apt-get install -y clang libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config
       - name: Install macOS OCR build dependencies
         if: runner.os == 'macOS'
-        run: brew install tesseract leptonica
+        run: |
+          brew install tesseract leptonica
+          echo "MACOSX_DEPLOYMENT_TARGET=$(sw_vers -productVersion)" >> "$GITHUB_ENV"
       - name: Install Windows OCR build dependencies
         if: runner.os == 'Windows'
         shell: pwsh
@@ -177,8 +180,6 @@ jobs:
     name: Desktop tests (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
-    env:
-      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -193,11 +194,9 @@ jobs:
           - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos-x64
-            macos_deployment_target: '15.0'
           - os: macos-15
             target: aarch64-apple-darwin
             platform: macos-arm64
-            macos_deployment_target: '15.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -218,7 +217,9 @@ jobs:
           sudo apt-get install -y build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libwebkit2gtk-4.1-dev libgtk-3-dev libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config patchelf
       - name: Install macOS OCR build dependencies
         if: runner.os == 'macOS'
-        run: brew install tesseract leptonica pkg-config
+        run: |
+          brew install tesseract leptonica pkg-config
+          echo "MACOSX_DEPLOYMENT_TARGET=$(sw_vers -productVersion)" >> "$GITHUB_ENV"
       - name: Install statically linked Windows OCR dependencies
         if: runner.os == 'Windows'
         shell: pwsh
@@ -245,7 +246,6 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           VCPKG_TRIPLET: ${{ matrix.vcpkg_triplet }}
-          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target || '' }}
 
   paired-benchmarks:
     if: inputs.validation == 'benchmark'
@@ -430,18 +430,15 @@ jobs:
           - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos-intel
-            macos_deployment_target: '15.0'
           - os: macos-15
             target: aarch64-apple-darwin
             platform: macos-apple-silicon
-            macos_deployment_target: '15.0'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     env:
       TARGET: ${{ matrix.target }}
       GLYPHMEND_VERSION: ${{ needs.release-version.outputs.version }}
       VCPKG_TRIPLET: ${{ matrix.vcpkg_triplet }}
-      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -464,7 +461,9 @@ jobs:
           sudo apt-get install -y build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libwebkit2gtk-4.1-dev libgtk-3-dev libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config patchelf
       - name: Install macOS OCR runtime dependencies
         if: runner.os == 'macOS'
-        run: brew install tesseract leptonica pkg-config
+        run: |
+          brew install tesseract leptonica pkg-config
+          echo "MACOSX_DEPLOYMENT_TARGET=$(sw_vers -productVersion)" >> "$GITHUB_ENV"
       - name: Install statically linked Windows OCR dependencies
         if: runner.os == 'Windows'
         shell: pwsh
@@ -577,6 +576,12 @@ jobs:
           test -f "$app/Contents/Resources/runtime/pdfium/libpdfium.dylib"
           test -f "$app/Contents/Resources/runtime/tessdata/best/chi_sim.traineddata"
           test -f "$app/Contents/Resources/runtime/notices/LICENSES.txt"
+          manifest_min=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).macOS.minimumSystemVersion" "$app/Contents/Resources/runtime/runtime-manifest.json")
+          plist_min=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")
+          if [[ "$manifest_min" != "$plist_min" ]]; then
+            echo "macOS runtime manifest minimum $manifest_min differs from installer minimum $plist_min" >&2
+            exit 1
+          fi
           executable=$(find "$app/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)
           test -n "$executable"
           while IFS= read -r -d '' library; do

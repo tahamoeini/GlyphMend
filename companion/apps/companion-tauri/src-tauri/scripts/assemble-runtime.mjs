@@ -14,13 +14,14 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { hasVerifiedPdfium, sha256 } from "./runtime-integrity.mjs";
 import { collectMacDependencyGraph, parseOtoolDependencies } from "./macos-dependencies.mjs";
+import { getSpdxText } from "../../../../../web-app/scripts/spdx-license-text.mjs";
+import { isNewerMacVersion } from "./macos-package-policy.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDir, "../../../../..");
 const runtimeDir = path.resolve(scriptDir, "../resources/runtime");
 const runtimeLibDir = path.join(runtimeDir, "lib");
 const sourceManifestPath = path.join(runtimeDir, "runtime-source-manifest.json");
-const spdxTextCache = new Map();
 const previousManifestPath = path.join(runtimeDir, "runtime-manifest.json");
 const previousManifest = existsSync(previousManifestPath)
   ? JSON.parse(readFileSync(previousManifestPath, "utf8")) : {};
@@ -160,15 +161,11 @@ function otoolDependencies(file) {
   return parseOtoolDependencies(file, output);
 }
 
-function versionParts(value) {
-  return value.split(".").map((part) => Number(part));
-}
-
 function validateMacDeploymentTarget(files) {
   const configPath = path.join(scriptDir, "..", "tauri.conf.json");
-  const configured = JSON.parse(readFileSync(configPath, "utf8")).bundle?.macOS?.minimumSystemVersion;
+  const configured = process.env.GLYPHMEND_MACOS_MINIMUM_SYSTEM_VERSION
+    || JSON.parse(readFileSync(configPath, "utf8")).bundle?.macOS?.minimumSystemVersion;
   if (!configured) throw new Error("Tauri macOS minimumSystemVersion is not configured.");
-  const configuredParts = versionParts(configured);
   for (const file of files) {
     const expectedArch = target.startsWith("aarch64-") ? "arm64" : "x86_64";
     if (!run("lipo", ["-archs", file]).output.split(/\s+/).includes(expectedArch)) {
@@ -184,30 +181,11 @@ function validateMacDeploymentTarget(files) {
       throw new Error(`Could not determine the minimum macOS version from load commands in ${file}.`);
     }
     for (const minimum of minimums) {
-      const parts = versionParts(minimum);
-      const length = Math.max(parts.length, configuredParts.length);
-      for (let index = 0; index < length; index += 1) {
-        const actual = parts[index] || 0;
-        const allowed = configuredParts[index] || 0;
-        if (actual > allowed) {
-          throw new Error(`${file} requires macOS ${minimum}, above the configured ${configured} minimum.`);
-        }
-        if (actual < allowed) break;
+      if (isNewerMacVersion(minimum, configured)) {
+        throw new Error(`${file} requires macOS ${minimum}, above the effective package minimum ${configured}. Rebuild native dependencies for that target or use a compatible build host.`);
       }
     }
   }
-}
-
-async function spdxText(id, exception = false) {
-  const cacheKey = `${exception ? "exception:" : "license:"}${id}`;
-  if (spdxTextCache.has(cacheKey)) return spdxTextCache.get(cacheKey);
-  const resourcePath = exception ? `exceptions/${encodeURIComponent(id)}` : encodeURIComponent(id);
-  const response = await fetch(`https://spdx.org/licenses/${resourcePath}.txt`);
-  if (!response.ok) throw new Error(`SPDX ${exception ? "exception " : "license "}text ${id} is unavailable (${response.status}).`);
-  const text = await response.text();
-  if (!text.trim()) throw new Error(`SPDX text ${id} is empty.`);
-  spdxTextCache.set(cacheKey, text);
-  return text;
 }
 
 async function collectMacLibraries(executable) {
@@ -293,11 +271,11 @@ async function writeMacNotices(packages) {
     if (!noticeFiles.length && !ids.length) {
       throw new Error(`Homebrew formula ${packageName} has no full license file or usable SPDX license expression.`);
     }
-    for (const id of ids) {
-      writeFileSync(path.join(packageNotices, `SPDX-${id}.txt`), await spdxText(id));
+    for (const id of noticeFiles.length ? [] : ids) {
+      writeFileSync(path.join(packageNotices, `SPDX-${id}.txt`), await getSpdxText(id));
     }
     for (const id of exceptions) {
-      writeFileSync(path.join(packageNotices, `SPDX-exception-${id}.txt`), await spdxText(id, true));
+      writeFileSync(path.join(packageNotices, `SPDX-exception-${id}.txt`), await getSpdxText(id));
     }
     writeFileSync(path.join(packageNotices, "PACKAGE.txt"), `${packageName}@${formula.versions?.stable || "unknown"}\nLicense: ${license || "UNSPECIFIED"}\nHomepage: ${formula.homepage || ""}\n`);
     records.push({
@@ -383,6 +361,10 @@ function writeManifest(sourceManifest, files, nativeLibraries, nativeSources) {
     },
     runtimeLibraries: nativeLibraries,
     runtimeLibrarySources: nativeSources,
+    ...(target.includes("apple-darwin") ? { macOS: {
+      minimumSystemVersion: process.env.GLYPHMEND_MACOS_MINIMUM_SYSTEM_VERSION
+        || JSON.parse(readFileSync(path.join(scriptDir, "..", "tauri.conf.json"), "utf8")).bundle.macOS.minimumSystemVersion,
+    } } : {}),
     totalBytes: files.reduce((total, file) => total + file.bytes, 0),
     files,
   };

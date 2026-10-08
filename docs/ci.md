@@ -4,6 +4,8 @@
 
 `.github/workflows/platform-ci.yml` is the repository's only GitHub Actions workflow, and it runs only when manually dispatched from the Actions page with **Run workflow**. It has no push, pull-request, schedule, or tag trigger. Every check, benchmark, and release is an explicit manual selection.
 
+After pushing CI fixes, start a **new Run workflow** on `main`. GitHub's **Re-run jobs** keeps the original run's commit and workflow revision, so it cannot validate newer fixes. The run title includes its commit SHA. Compare that SHA with the completed revision you intend to validate. See [GitHub's re-run behavior](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs).
+
 Choose one mode:
 
 | Mode | What it runs |
@@ -43,7 +45,11 @@ The Desktop development command uses `devUrl` at `http://127.0.0.1:1420`. Tauri'
 
 Release package jobs set `TARGET` to the matrix Rust triple. The Tauri launcher forwards that value to `tauri build --target` unless a target is already supplied; local builds use the prepared source manifest's target when `TARGET` is absent. The launcher rejects conflicting explicit and environment targets and passes the selected target to the build hooks. The executable, runtime assembly, and installer therefore all use `companion/target/<triple>/release`.
 
-Runtime validation preserves the checksum-verified upstream PDFium digest separately from its relocated bundle digest. Both the prepared resources and the installed or extracted resources are checked. macOS packaging walks actual Mach-O dependencies recursively, includes their Homebrew license provenance, and ad hoc signs relocated libraries. Both macOS matrix entries set `MACOSX_DEPLOYMENT_TARGET=15.0`, matching the application's macOS 15 minimum and the runner's Homebrew bottles. Supporting earlier macOS releases requires rebuilding the native dependency chain for that deployment target.
+Runtime validation preserves the checksum-verified upstream PDFium digest separately from its relocated bundle digest. Both the prepared resources and the installed or extracted resources are checked. macOS packaging walks actual Mach-O dependencies recursively, includes their Homebrew license provenance, and ad hoc signs relocated libraries. The launcher selects the greater of the configured macOS floor and the host's complete `sw_vers -productVersion`, including its patch release. It passes that one value to `MACOSX_DEPLOYMENT_TARGET`, a Tauri `--config` override, and the runtime assembly hook. The runtime manifest records `macOS.minimumSystemVersion`; inspection verifies that it matches the app's `LSMinimumSystemVersion`. Libraries requiring a newer version still fail validation. This deliberately conservative policy does not claim that bottles built on 15.7.5 work on 15.0. Supporting earlier releases requires a controlled native dependency build for that target.
+
+The shared extractor build script links `xmllite`, `iphlpapi`, `crypt32`, and `secur32` on Windows. Static libarchive and libcurl reference those Windows SDK APIs, but the Rust vcpkg discovery path does not automatically include these import libraries. Placing the fix in the extractor applies it to the Desktop app, Companion CLI, and test executables.
+
+Browser, Rust, and Homebrew notice collectors share `web-app/scripts/spdx-license-text.mjs`. It downloads complete license and exception texts from an immutable official SPDX license-list-data commit, caches successful texts per process, and retries transient HTTP/network failures. It does not depend on missing or redirected `spdx.org/licenses/*.txt` pages. Native formula license files are copied first; canonical SPDX text supplies missing license files. Unknown identifiers and invalid responses fail packaging rather than silently dropping notices. Update `SPDX_DATA_COMMIT` deliberately when a dependency requires newer SPDX data.
 
 ## Manual full validation
 

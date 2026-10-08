@@ -118,6 +118,9 @@ if (!checkFile("runtime-manifest.json")) {
     if (manifest.distribution !== "desktop" || manifest.target !== target || manifest.platform !== platform) {
       fail(`Desktop runtime manifest target mismatch (expected ${target}, got ${manifest.target || "missing"}).`);
     }
+    if (platform === "macos" && !/^\d+(?:\.\d+){1,2}$/.test(manifest.macOS?.minimumSystemVersion || "")) {
+      fail("The macOS runtime manifest must record the effective installer minimumSystemVersion.");
+    }
     if (manifest.pdfium?.fileSha256 !== sourceManifest?.pdfium?.fileSha256
       || manifest.pdfium?.archiveSha256 !== sourceManifest?.pdfium?.archiveSha256
       || manifest.pdfium?.bundledFileSha256 !== digest(path.join(runtimeDir, "pdfium", pdfiumName))) {

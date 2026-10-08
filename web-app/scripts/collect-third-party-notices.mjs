@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getSpdxText as getSpdxLicenseText } from "./spdx-license-text.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(scriptDir, "..");
@@ -12,7 +13,6 @@ const outputDir = path.resolve(process.argv[2] || path.join(webRoot, "../compani
 const packageEntries = lock.packages || {};
 const included = new Map();
 const visiting = new Set();
-const licenseTextCache = new Map();
 const traversalFailures = [];
 
 function installedPackageRoot(lockKey) {
@@ -71,16 +71,6 @@ function licenseIds(expression) {
   const withoutExceptions = String(expression).replace(/\bWITH\s+[A-Za-z0-9][A-Za-z0-9.-]*/gi, "");
   return [...new Set(withoutExceptions.match(/[A-Za-z0-9][A-Za-z0-9.-]*/g) || [])]
     .filter((id) => !["AND", "OR", "WITH"].includes(id.toUpperCase()) && !id.startsWith("LicenseRef-"));
-}
-
-async function getSpdxLicenseText(id) {
-  if (licenseTextCache.has(id)) return licenseTextCache.get(id);
-  const response = await fetch(`https://spdx.org/licenses/${encodeURIComponent(id)}.txt`);
-  if (!response.ok) throw new Error(`SPDX license text ${id} is unavailable (${response.status}).`);
-  const text = await response.text();
-  if (!text.trim()) throw new Error(`SPDX license text ${id} was empty.`);
-  licenseTextCache.set(id, text);
-  return text;
 }
 
 fs.mkdirSync(outputDir, { recursive: true });
