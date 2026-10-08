@@ -56,6 +56,8 @@ The app process exposes only the bounded registered job commands. The frontend h
 
 Use Node.js 22 and the Rust toolchain pinned in `companion/rust-toolchain.toml`. Install the host's Tauri/WebView prerequisites and Tesseract/Leptonica development libraries first. Keep a separate checkout for each development OS: Tauri's CLI binary in `node_modules` and the contents of `resources/runtime` are OS-specific, so a Windows checkout cannot be shared with WSL. The Tauri CLI install explicitly includes npm optional dependencies:
 
+On Windows, install the Microsoft C++ Build Tools and select the **Desktop development with C++** workload, including the x64/x86 MSVC tools and a Windows SDK. This project builds the `x86_64-pc-windows-msvc` Rust target, which needs `link.exe`. Run development commands from **Developer PowerShell for Visual Studio** so the MSVC tools are available on `PATH`. Tauri also requires Microsoft Edge WebView2 for Windows development. See [Tauri's Windows prerequisites](https://v2.tauri.app/start/prerequisites/#windows) and [Microsoft's MSVC Build Tools guide](https://learn.microsoft.com/en-us/cpp/overview/acquire-msvc?view=msvc-170).
+
 ```bash
 cd web-app
 npm ci

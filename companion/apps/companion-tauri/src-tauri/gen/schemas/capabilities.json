@@ -1,0 +1,1 @@
+{"glyphmend-desktop":{"identifier":"glyphmend-desktop","description":"Restricted IPC access for the GlyphMend Desktop window.","local":true,"windows":["main"],"permissions":["core:default"]}}
