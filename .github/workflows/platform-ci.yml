@@ -543,6 +543,11 @@ jobs:
           done
           executable=$(find "$root/usr/bin" -maxdepth 1 -type f -print -quit)
           test -n "$executable"
+          expected_rpath="\$ORIGIN/../lib/$product_name/runtime/lib"
+          if [[ "$(patchelf --print-rpath "$executable")" != "$expected_rpath" ]]; then
+            echo "The packaged executable does not use its bundled runtime path: $expected_rpath" >&2
+            exit 1
+          fi
           LD_LIBRARY_PATH="$resources/runtime/lib" ldd "$executable" | tee "$RUNNER_TEMP/glyphmend-ldd.txt"
           if grep -q 'not found' "$RUNNER_TEMP/glyphmend-ldd.txt"; then
             echo 'The extracted executable has unresolved shared libraries.' >&2
