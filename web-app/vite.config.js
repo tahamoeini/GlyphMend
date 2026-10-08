@@ -5,6 +5,8 @@ import { VitePWA } from "vite-plugin-pwa";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
 const OCR_LANGUAGES = ["eng", "rus", "fas", "chi_sim"];
+const sharedNodeModules = fileURLToPath(new URL("../node_modules/", import.meta.url)).replaceAll("\\", "/");
+const dependencyAsset = (...segments) => `${sharedNodeModules}/${segments.join("/")}`;
 
 export default defineConfig(({ mode }) => {
   const desktopBuild = mode === "desktop";
@@ -35,21 +37,21 @@ export default defineConfig(({ mode }) => {
   const plugins = [
     viteStaticCopy({
       targets: [
-        { src: "node_modules/pdfjs-dist/wasm/*", dest: "wasm" },
-        { src: "node_modules/mupdf/dist/mupdf.js", dest: "mupdf" },
-        { src: "node_modules/mupdf/dist/mupdf-wasm.js", dest: "mupdf" },
-        { src: "node_modules/mupdf/dist/mupdf-wasm.wasm", dest: "mupdf" },
+        { src: dependencyAsset("pdfjs-dist", "wasm", "*"), dest: "wasm" },
+        { src: dependencyAsset("mupdf", "dist", "mupdf.js"), dest: "mupdf" },
+        { src: dependencyAsset("mupdf", "dist", "mupdf-wasm.js"), dest: "mupdf" },
+        { src: dependencyAsset("mupdf", "dist", "mupdf-wasm.wasm"), dest: "mupdf" },
         {
-          src: "node_modules/tesseract.js-core/*.{wasm,wasm.js}",
+          src: dependencyAsset("tesseract.js-core", "*.{wasm,wasm.js}"),
           dest: "tesseract-core",
         },
         {
-          src: "node_modules/tesseract.js/dist/worker.min.js",
+          src: dependencyAsset("tesseract.js", "dist", "worker.min.js"),
           dest: "tesseract",
         },
         ...OCR_LANGUAGES.map((language) => ({
           // Serve local models uncompressed so the same file works in dev and offline builds.
-          src: `node_modules/@tesseract.js-data/${language}/4.0.0_best_int/${language}.traineddata.gz`,
+          src: dependencyAsset("@tesseract.js-data", language, "4.0.0_best_int", `${language}.traineddata.gz`),
           dest: "tessdata",
           rename: `${language}.traineddata`,
           transform: {

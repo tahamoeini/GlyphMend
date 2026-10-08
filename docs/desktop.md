@@ -54,27 +54,24 @@ The app process exposes only the bounded registered job commands. The frontend h
 
 ## Local development
 
-Use Node.js 22 and the Rust toolchain pinned in `companion/rust-toolchain.toml`. Install the host's Tauri/WebView prerequisites and Tesseract/Leptonica development libraries first. Keep a separate checkout for each development OS: Tauri's CLI binary in `node_modules` and the contents of `resources/runtime` are OS-specific, so a Windows checkout cannot be shared with WSL. The Tauri CLI install explicitly includes npm optional dependencies:
+Use Node.js 22 and the Rust toolchain pinned in `companion/rust-toolchain.toml`. Install the host's Tauri/WebView prerequisites and Tesseract/Leptonica development libraries first. Keep a separate checkout for each development OS, including Windows and WSL: Tauri's native npm binding and `resources/runtime` contents are target-specific. The root npm workspace installs both frontend and Tauri build tools from one lockfile. Use `npm ci --include=optional` so npm installs the platform-specific Tauri CLI package.
 
 On Windows, install the Microsoft C++ Build Tools and select the **Desktop development with C++** workload, including the x64/x86 MSVC tools and a Windows SDK. This project builds the `x86_64-pc-windows-msvc` Rust target, which needs `link.exe`. Run development commands from **Developer PowerShell for Visual Studio** so the MSVC tools are available on `PATH`. Tauri also requires Microsoft Edge WebView2 for Windows development. See [Tauri's Windows prerequisites](https://v2.tauri.app/start/prerequisites/#windows) and [Microsoft's MSVC Build Tools guide](https://learn.microsoft.com/en-us/cpp/overview/acquire-msvc?view=msvc-170).
 
-```bash
-cd web-app
-npm ci
-npm run build:desktop
+Run the single desktop development command from the repository root:
 
-cd ../companion/apps/companion-tauri/web
+```bash
 npm ci --include=optional
-npm run icon
-npm run prepare:runtime
-npm run tauri -- dev
+npm run dev:desktop
 ```
 
-The runtime preparation downloads the pinned PDFium library and OCR model files; it does not run during normal browser builds. If reusing a checkout that already has runtime files from another OS or an interrupted preparation, run `npm run clean:runtime` before `npm run prepare:runtime`. The cleaner removes only recognized generated runtime entries and refuses to remove unknown files. Windows packaging CI uses statically linked vcpkg libraries. Linux and macOS package assembly is performed by the native release workflow so it can inspect and relocate the target libraries with the appropriate tools.
+`dev:desktop` prepares the pinned runtime and starts Tauri. Tauri's `beforeDevCommand` starts the shared Vite frontend at `http://127.0.0.1:1420`, and `devUrl` loads that server in the native WebView; development no longer depends on an old generated `dist/` directory. The installer path remains a bundled production build. For release packaging use `npm run build:desktop`. `npm run build:desktop:web` builds only the desktop-mode frontend. `npm run desktop:prepare` prepares runtime data explicitly, while `npm run desktop:clean:runtime` removes recognized generated data.
+
+Runtime preparation is idempotent when the current checkout already contains verified resources for the same target. If it finds missing, stale, or mismatched resources, it fails with the exact cleanup command. Run `npm run desktop:clean:runtime` and then `npm run desktop:prepare`; the cleaner refuses unknown files. Do not switch OS targets inside one checkout. Use separate Windows and WSL/Linux checkouts so the runtime and npm optional native binary remain isolated. Windows development also requires the Microsoft C++ Build Tools and a Developer PowerShell with `link.exe` on `PATH`.
 
 ## Release process
 
-All GitHub Actions workflows are started manually; pushes, pull requests, and tags do not trigger CI/CD. Run `.github/workflows/companion-tauri.yml` from the Actions tab for native Desktop checks on Windows x64, Ubuntu x64, macOS Intel, and Apple silicon. The separate `.github/workflows/glyphmend-desktop-release.yml` must be manually dispatched from the default branch with a prerelease version of the form `X.Y.Z-beta.N`. After all native installers pass validation, it creates the matching `glyphmend-vX.Y.Z-beta.N` tag and an unsigned **draft prerelease**. The draft is not public until someone publishes it in GitHub.
+The consolidated CI workflow runs lightweight checks automatically for pull requests and pushes to `main`. Its manually selected `full` mode runs the moved test suites and native compilation checks. The single `platform-release.yml` workflow builds the browser package, standalone Companion packages, and Desktop installers under one prerelease version, then creates one unsigned **draft prerelease** after all packaging and runtime smoke checks pass. The draft is not public until a maintainer publishes it.
 
 Do not create a release tag, publish a draft, or distribute installers as part of ordinary code implementation. Stable releases need configured signing/notarization and a clean-machine install, offline, restart, and upgrade validation run.
 

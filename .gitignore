@@ -14,7 +14,7 @@ build/
 .vite/
 .DS_Store
 *.pdf
+node_modules/
 companion/target/
-companion/apps/companion-tauri/web/node_modules/
 companion/apps/companion-tauri/src-tauri/resources/runtime/**
 !companion/apps/companion-tauri/src-tauri/resources/runtime/.gitkeep

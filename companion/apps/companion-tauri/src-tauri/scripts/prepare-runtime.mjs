@@ -127,6 +127,12 @@ if (!targetConfig || targetConfig.os !== (process.platform === "win32" ? "window
   throw new Error(`Unsupported GlyphMend Desktop target: ${target || "unknown"}`);
 }
 
+const sourceManifestPath = path.join(runtimeDir, "runtime-source-manifest.json");
+if (hasMatchingRuntime()) {
+  console.log(`GlyphMend Desktop runtime resources are already prepared for ${target}.`);
+  process.exit(0);
+}
+
 const existing = readdirSync(runtimeDir).filter((name) => name !== ".gitkeep");
 const unexpected = existing.filter((name) => name !== "notices");
 const generatedNoticePaths = [
@@ -139,15 +145,17 @@ const generatedNoticePaths = [
 ];
 if (unexpected.length || generatedNoticePaths.some((name) => existsSync(path.join(runtimeDir, "notices", name)))) {
   throw new Error(
-    `Refusing to overwrite existing desktop runtime data: ${runtimeDir}. `
-    + "If these are stale generated resources, run `npm run clean:runtime` before preparing this OS target.",
+    `Desktop runtime data already exists at ${runtimeDir}, but it does not match ${target}. `
+    + "From the repository root, run `npm run desktop:clean:runtime` to remove recognized generated files, "
+    + "then prepare again. Keep Windows and WSL in separate checkouts.",
   );
 }
 for (const name of ["pdfium", "tessdata", "lib", "runtime-source-manifest.json", "runtime-manifest.json"]) {
   if (existsSync(path.join(runtimeDir, name))) {
     throw new Error(
-      `Refusing to overwrite existing desktop runtime data: ${path.join(runtimeDir, name)}. `
-      + "If these are stale generated resources, run `npm run clean:runtime` before preparing this OS target.",
+      `Desktop runtime data already exists at ${path.join(runtimeDir, name)}, but it does not match ${target}. `
+      + "From the repository root, run `npm run desktop:clean:runtime` to remove recognized generated files, "
+      + "then prepare again. Keep Windows and WSL in separate checkouts.",
     );
   }
 }
@@ -241,4 +249,40 @@ function mkdtempRuntime() {
   const temporaryRoot = path.join(os.tmpdir(), `glyphmend-runtime-${process.pid}-${Date.now()}`);
   mkdirSync(temporaryRoot, { recursive: true });
   return temporaryRoot;
+}
+
+function hasMatchingRuntime() {
+  if (!existsSync(sourceManifestPath)) return false;
+  try {
+    const manifest = JSON.parse(readFileSync(sourceManifestPath, "utf8"));
+    if (manifest.distribution !== "desktop"
+      || manifest.target !== target
+      || manifest.platform !== targetConfig.os
+      || manifest.pdfium?.release !== pdfiumRelease
+      || manifest.pdfium?.archiveSha256 !== targetConfig.sha256
+      || manifest.tessdata?.commits?.fast !== tessdataCommits.fast
+      || manifest.tessdata?.commits?.best !== tessdataCommits.best) {
+      return false;
+    }
+
+    const pdfiumPath = path.join(runtimeDir, "pdfium", targetConfig.library);
+    if (!matchesDigest(pdfiumPath, manifest.pdfium.fileSha256)) return false;
+
+    for (const modelSet of Object.keys(tessdataCommits)) {
+      for (const language of languages) {
+        const modelPath = path.join(runtimeDir, "tessdata", modelSet, `${language}.traineddata`);
+        const expectedDigest = manifest.tessdata.modelDigests?.[modelSet]?.[language];
+        if (!matchesDigest(modelPath, expectedDigest)) return false;
+      }
+    }
+    return existsSync(path.join(runtimeDir, "notices", "LICENSES.txt"));
+  } catch {
+    return false;
+  }
+}
+
+function matchesDigest(filePath, expectedDigest) {
+  if (!expectedDigest || !existsSync(filePath)) return false;
+  const digest = createHash("sha256").update(readFileSync(filePath)).digest("hex");
+  return digest === expectedDigest;
 }

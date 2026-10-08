@@ -370,10 +370,18 @@ function writeManifest(sourceManifest, files, nativeLibraries) {
 const sourceManifest = JSON.parse(readFileSync(sourceManifestPath, "utf8"));
 const target = process.env.TARGET || sourceManifest.target;
 if (target !== sourceManifest.target) {
-  throw new Error(`Prepared runtime target ${sourceManifest.target} does not match build target ${target}.`);
+  throw new Error(
+    `Prepared runtime target ${sourceManifest.target} does not match build target ${target}. `
+    + "Use a separate checkout for each OS, or from the repository root run `npm run desktop:clean:runtime` then `npm run desktop:prepare`.",
+  );
 }
 const pdfiumPath = path.join(runtimeDir, "pdfium", sourceManifest.pdfium.file);
-if (!existsSync(pdfiumPath)) throw new Error(`Prepared PDFium library is missing: ${pdfiumPath}`);
+if (!existsSync(pdfiumPath)) {
+  throw new Error(
+    `Prepared PDFium library is missing: ${pdfiumPath}. `
+    + "From the repository root run `npm run desktop:clean:runtime` then `npm run desktop:prepare`.",
+  );
+}
 if (!sourceManifest.tessdata?.commits?.fast || !sourceManifest.tessdata?.commits?.best) {
   throw new Error("Prepared OCR model provenance is missing.");
 }

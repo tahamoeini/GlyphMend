@@ -151,7 +151,7 @@ async fn run_job(pdf: Vec<u8>, use_ocr: bool, force_ocr: bool) -> serde_json::Va
 }
 
 fn hex_digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 fn digital_text_pdf() -> Vec<u8> {

@@ -10,14 +10,16 @@ GlyphMend has three local processing modes:
 
 All engines return the versioned Semantic Document IR v2. The browser validates results and owns the shared review, checkpoint, Markdown, and DOCX paths. A Companion failure falls back to browser extraction for the current uncommitted batch; cancellation does not start fallback work.
 
+The frontend keeps one provider contract across three providers: browser-local extraction, the user-paired loopback Companion, and the bundled Desktop engine through Tauri IPC. Capability reporting and IR validation remain at that boundary. Browser extraction is available without a Companion and is the fallback when a paired provider is unavailable or fails.
+
 ## Data flow
 
 ~~~text
 PDF selected in Browser/PWA or Desktop
   -> selected engine for this job
-      -> Browser/PWA: MuPDF WebAssembly and bundled browser OCR
-      -> Browser + Companion: loopback API, PDFium, Tesseract
-      -> Desktop: Tauri IPC, PDFium, Tesseract
+        -> Browser provider: MuPDF WebAssembly and bundled browser OCR
+      -> Paired Companion provider: loopback API, PDFium, Tesseract
+      -> Bundled Desktop provider: Tauri IPC, PDFium, Tesseract
   -> validate Semantic Document IR v2
   -> checkpoint in browser storage
   -> review and source comparison
@@ -42,18 +44,9 @@ companion/                 Rust workspace, protocol schemas, benchmarks, and Tau
 docs/                      Current product and operations documentation
 docs/archive/              Historical implementation records
 research/                  Research plans and design references
-.github/workflows/         Manually dispatched CI, benchmark, and release workflows
+.github/workflows/         Consolidated CI/release workflows and reusable package jobs
 ~~~
 
 ## Verification workflows
 
-Every workflow currently uses workflow_dispatch; none is configured to run on pushes, pull requests, or tags.
-
-- **web-app.yml:** browser license checks, dependency audit, lint, typecheck, tests, production build, and artifact upload.
-- **companion.yml:** Rust checks, dependency policy, and browser-to-Companion runtime integration.
-- **companion-tauri.yml:** native Desktop CI across Windows, Ubuntu, macOS Intel, and Apple silicon.
-- **companion-benchmarks.yml:** paired browser/Companion benchmark runs.
-- **companion-release.yml:** unsigned standalone Companion packages and GitHub Release publication.
-- **glyphmend-desktop-release.yml:** unsigned Desktop installers and a draft prerelease.
-
-Workflow definitions describe intended checks; inspect the Actions run for evidence that a specific revision passed. See [CI/CD and releases](ci.md) and [distribution status](distribution-plan.md).
+`platform-ci.yml` runs lightweight checks on pull requests and pushes to `main`. Its manually selected full-validation mode runs browser, Rust, Tauri, and browser-to-Companion tests plus native compilation checks. Paired benchmarks are another manual mode. `platform-release.yml` builds the browser package, Companion packages, and Desktop installers in parallel, then stages them in one versioned draft release. See [CI/CD and releases](ci.md) and [distribution status](distribution-plan.md).

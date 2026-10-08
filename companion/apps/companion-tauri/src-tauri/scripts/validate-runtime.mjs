@@ -144,6 +144,9 @@ if (!checkFile("runtime-manifest.json")) {
 if (failures.length) {
   console.error("Desktop runtime validation failed:");
   for (const failure of failures) console.error(`- ${failure}`);
+  console.error(
+    "Recovery: use a checkout dedicated to this OS target, then run `npm run desktop:clean:runtime`, `npm run desktop:prepare`, and `npm run build:desktop` from the repository root.",
+  );
   process.exitCode = 1;
 } else {
   const size = walkFiles(runtimeDir).reduce((total, file) => total + statSync(file).size, 0);

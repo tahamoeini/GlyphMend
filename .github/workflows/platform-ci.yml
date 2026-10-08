@@ -1,0 +1,313 @@
+name: GlyphMend platform CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      validation:
+        description: Select the amount of validation to run
+        type: choice
+        options: [quick, full, benchmark]
+        default: quick
+        required: true
+      repeats:
+        description: Paired runs per benchmark document class
+        type: choice
+        options: ['3', '5']
+        default: '3'
+        required: true
+      ocr_accuracy:
+        description: Companion OCR model to measure
+        type: choice
+        options: [fast, high-accuracy]
+        default: fast
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: glyphmend-platform-${{ github.workflow }}-${{ github.ref }}-${{ inputs.validation || 'quick' }}
+  cancel-in-progress: false
+
+jobs:
+  web-checks:
+    if: github.event_name != 'workflow_dispatch' || inputs.validation != 'benchmark'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install all JavaScript workspaces
+        run: npm ci --include=optional
+      - run: npm run license:check
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Build browser/PWA frontend
+        run: npm run build:web
+        env:
+          VITE_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}/web-app
+          VITE_LICENSE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/web-app/LICENSE
+      - name: Build desktop frontend
+        run: npm run build:desktop:web
+        env:
+          VITE_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}/web-app
+          VITE_LICENSE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/web-app/LICENSE
+      - name: Ensure generated branding is committed
+        run: git diff --exit-code -- branding.json brand web-app/src/shared/brand.js web-app/src/styles/style.css
+      - if: github.event_name == 'workflow_dispatch' && inputs.validation != 'benchmark'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: glyphmend-browser-${{ github.sha }}
+          path: web-app/dist
+          if-no-files-found: error
+          retention-days: 14
+
+  rust-checks:
+    if: github.event_name != 'workflow_dispatch' || inputs.validation != 'benchmark'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Build the Desktop frontend for Tauri compilation
+        run: |
+          npm ci --include=optional
+          npm run build:desktop:web
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: 1.97.0
+          components: rustfmt, clippy
+          cache: false
+      - name: Install Linux Tauri and OCR build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libwebkit2gtk-4.1-dev libgtk-3-dev libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config patchelf
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+        working-directory: companion
+      - name: Check Rust warnings
+        run: cargo clippy --locked --workspace --exclude companion-tauri -- -D warnings
+        working-directory: companion
+      - name: Compile the Tauri host
+        run: cargo check --locked -p companion-tauri
+        working-directory: companion
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-deny
+      - name: Check Rust dependency policy
+        run: cargo deny check
+        working-directory: companion
+
+  web-tests:
+    if: github.event_name == 'workflow_dispatch' && inputs.validation == 'full'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --include=optional
+      - name: Run browser test suite
+        run: npm test
+
+  companion-tests:
+    if: github.event_name == 'workflow_dispatch' && inputs.validation == 'full'
+    name: Companion tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    defaults:
+      run:
+        working-directory: companion
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: 1.97.0
+          cache: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+      - name: Install Linux OCR build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config
+      - name: Install macOS OCR build dependencies
+        if: runner.os == 'macOS'
+        run: brew install tesseract leptonica
+      - name: Install Windows OCR build dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install tesseract:x64-windows
+      - name: Configure dynamic Tesseract linking
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
+          "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin" >> $env:GITHUB_PATH
+      - run: cargo test --locked --workspace --exclude companion-tauri
+      - run: cargo build --locked -p companion-cli
+      - run: cargo build --locked -p companion-bridge --example browser-runtime-e2e-host
+      - run: node tests/browser-runtime-e2e.mjs
+
+  desktop-tests:
+    if: github.event_name == 'workflow_dispatch' && inputs.validation == 'full'
+    name: Desktop tests (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            platform: windows-x64
+            vcpkg_triplet: x64-windows-static-md
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x64
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            platform: macos-x64
+          - os: macos-15
+            target: aarch64-apple-darwin
+            platform: macos-arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: 1.97.0
+          target: ${{ matrix.target }}
+          components: rustfmt, clippy
+          cache: false
+      - name: Install Linux Tauri and OCR build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libwebkit2gtk-4.1-dev libgtk-3-dev libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config patchelf
+      - name: Install macOS OCR build dependencies
+        if: runner.os == 'macOS'
+        run: brew install tesseract leptonica pkg-config
+      - name: Install statically linked Windows OCR dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VCPKG_TRIPLET: ${{ matrix.vcpkg_triplet }}
+        run: |
+          vcpkg install "tesseract:$env:VCPKG_TRIPLET"
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
+          "VCPKG_DEFAULT_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
+          "VCPKGRS_DYNAMIC=0" >> $env:GITHUB_ENV
+      - run: npm ci --include=optional
+      - run: npm run build:desktop:web
+      - name: Test Tauri IPC adapter
+        run: node --test companion/apps/companion-tauri/web/src/tauri-adapter.test.mjs
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+        working-directory: companion
+      - name: Test Tauri service and bounded IPC assembly
+        run: cargo test --locked -p companion-tauri --target ${{ matrix.target }}
+        working-directory: companion
+      - name: Build native Desktop host without packaging
+        run: npm run tauri --workspace glyphmend-desktop-build-tools -- build --no-bundle --target ${{ matrix.target }}
+        env:
+          TARGET: ${{ matrix.target }}
+          VCPKG_TRIPLET: ${{ matrix.vcpkg_triplet }}
+
+  paired-benchmarks:
+    if: github.event_name == 'workflow_dispatch' && inputs.validation == 'benchmark'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: 1.97.0
+          cache: false
+      - name: Install Linux OCR build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config
+      - name: Verify Chromium availability
+        run: google-chrome --version
+      - run: npm ci --include=optional
+      - name: Build Companion CLI
+        run: cargo build --locked -p companion-cli
+        working-directory: companion
+      - name: Install checksum-pinned PDFium runtime
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8066/pdfium-linux-x64.tgz -o /tmp/pdfium.tgz
+          echo '0b43f405477cf2cfc4dbff06905093c3309756c6bca1fb9da99234a2ca97fed2  /tmp/pdfium.tgz' | sha256sum --check
+          mkdir -p /tmp/pdfium-runtime
+          tar -xzf /tmp/pdfium.tgz -C /tmp/pdfium-runtime
+          pdfium="$(find /tmp/pdfium-runtime -name libpdfium.so -print -quit)"
+          test -n "$pdfium"
+          cp -L "$pdfium" companion/target/debug/libpdfium.so
+      - name: Install pinned English OCR models
+        run: |
+          set -euo pipefail
+          root=companion/target/debug/tessdata
+          mkdir -p "$root/fast" "$root/best"
+          for model in fast best; do
+            if [[ "$model" == fast ]]; then commit=87416418657359cb625c412a48b6e1d6d41c29bd; else commit=e12c65a915945e4c28e237a9b52bc4a8f39a0cec; fi
+            curl -fsSL "https://raw.githubusercontent.com/tesseract-ocr/tessdata_$model/$commit/eng.traineddata" -o "$root/$model/eng.traineddata"
+            printf '%s\n' "$commit" > "$root/$model/UPSTREAM_COMMIT"
+          done
+      - name: Verify labeled corpus
+        run: node companion/benchmarks/check-corpus.mjs
+      - name: Run repeated paired extraction benchmark
+        env:
+          GLYPHMEND_COMPANION: ${{ github.workspace }}/companion/target/debug/companion-cli
+          GLYPHMEND_TESSDATA_DIR: ${{ github.workspace }}/companion/target/debug/tessdata
+          CHROME_BIN: /usr/bin/google-chrome
+          LD_LIBRARY_PATH: ${{ github.workspace }}/companion/target/debug
+          BENCHMARK_REPEATS: ${{ inputs.repeats || '3' }}
+          BENCHMARK_OCR_ACCURACY: ${{ inputs.ocr_accuracy || 'fast' }}
+          OUTPUT_DIR: ${{ runner.temp }}/glyphmend-benchmarks
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+          node companion/benchmarks/run-benchmarks.mjs --repeats "$BENCHMARK_REPEATS" --ocr-accuracy "$BENCHMARK_OCR_ACCURACY" --output "$OUTPUT_DIR/raw-runs.json"
+          node companion/benchmarks/evaluate-results.mjs "$OUTPUT_DIR/raw-runs.json" "$OUTPUT_DIR/paired-report.json"
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: glyphmend-companion-benchmarks-${{ inputs.ocr_accuracy || 'fast' }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/glyphmend-benchmarks/
+          if-no-files-found: warn
+          retention-days: 90

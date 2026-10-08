@@ -4,8 +4,47 @@ import { setTimeout as delay } from "node:timers/promises";
 import { LoopbackCompanionBridge, sha256Hex } from "../../web-app/src/features/companion/bridge.js";
 
 const executable = process.platform === "win32" ? "target/debug/companion-cli.exe" : "target/debug/companion-cli";
+const diagnosticExecutable = process.platform === "win32"
+  ? "target/debug/examples/browser-runtime-e2e-host.exe"
+  : "target/debug/examples/browser-runtime-e2e-host";
 const webOrigin = "http://127.0.0.1:5173";
-const child = spawn(executable, ["--no-open", "--web-origin", webOrigin], { stdio: ["ignore", "pipe", "inherit"] });
+
+async function verifyProductionCompanion() {
+  const companion = spawn(executable, ["--no-open", "--web-origin", webOrigin], { stdio: ["ignore", "pipe", "inherit"] });
+  let companionOutput = "";
+  companion.stdout.setEncoding("utf8");
+  companion.stdout.on("data", (chunk) => { companionOutput += chunk; });
+  try {
+    const deadline = Date.now() + 20_000;
+    while (!companionOutput.includes("Connection URL:") && Date.now() < deadline) {
+      if (companion.exitCode !== null) throw new Error(`Companion exited early (${companion.exitCode}).`);
+      await delay(25);
+    }
+    assert.match(companionOutput, /Connection URL:/, "production Companion did not start");
+    const connectionUrl = companionOutput.split("Connection URL:").at(-1).trim().split(/\r?\n/, 1)[0];
+    const params = new URLSearchParams(new URL(connectionUrl).hash.slice(1));
+    const endpoint = params.get("companionEndpoint");
+    const pairingCode = params.get("companionCode");
+    assert.ok(endpoint && pairingCode, "production Companion did not provide pairing data");
+
+    const bridge = new LoopbackCompanionBridge(async (url, init = {}) => {
+      const headers = new Headers(init.headers);
+      headers.set("Origin", webOrigin);
+      return fetch(url, { ...init, headers });
+    });
+    const connection = await bridge.connect(endpoint, pairingCode);
+    assert.equal(connection.status, "connected");
+    assert.ok(connection.capabilities.some(({ id }) => id === "glyphmend.document.extract.v2"), "production Companion should expose document extraction");
+    await bridge.disconnect();
+  } finally {
+    companion.kill();
+  }
+}
+
+await verifyProductionCompanion();
+console.log("Companion browser pairing and production capability smoke check passed.");
+
+const child = spawn(diagnosticExecutable, ["--web-origin", webOrigin], { stdio: ["ignore", "pipe", "inherit"] });
 let output = "";
 child.stdout.setEncoding("utf8");
 child.stdout.on("data", (chunk) => { output += chunk; });

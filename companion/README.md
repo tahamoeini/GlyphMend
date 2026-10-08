@@ -27,7 +27,7 @@ When OCR is enabled, GLYPHMEND_TESSDATA_DIR can point to a Tesseract data root. 
 
 ## Workspace checks
 
-Use the commands in [CI/CD and releases](../docs/ci.md) for Rust formatting, Clippy, tests, dependency policy, and browser-to-Companion integration. The Tauri host has separate native checks and prerequisites.
+Use the commands in [CI/CD and releases](../docs/ci.md) for Rust formatting, Clippy, dependency policy, and compilation checks. Rust, Tauri, and browser-to-Companion tests remain available in the manually selected full-validation mode. The Tauri host uses the root npm workspace and has host-specific prerequisites.
 
 ## Related documentation
 

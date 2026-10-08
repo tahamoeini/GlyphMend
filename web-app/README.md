@@ -21,22 +21,22 @@ For operations and troubleshooting, see the [browser guide](../docs/browser.md).
 
 ## Run and build
 
-Use Node.js 22 and npm:
+Use Node.js 22 and npm from the repository root (the frontend is an npm workspace):
 
 ```bash
 npm ci
-npm run dev
+npm run dev:web
 ```
 
 ```bash
-npm test
-npm run build
-npm run preview
+npm test # manual full-validation mode
+npm run build:web
+npm run preview --workspace glyphmend-browser
 ```
 
 The production output is `dist/`. Serve it over HTTPS; browsers restrict workers and service workers on `file://` URLs.
 
-The installable Desktop frontend is built separately with `npm run build:desktop`. That build uses the Tauri IPC adapter and omits the PWA service worker; the Tauri host and native runtime packaging are documented in [GlyphMend Desktop](../docs/desktop.md).
+The installable Desktop frontend is built with `npm run build:desktop:web`. That build uses the Tauri IPC adapter and omits the PWA service worker. To launch the native development app, run `npm run dev:desktop` from the repository root; to package an installer, run `npm run build:desktop`. See [GlyphMend Desktop](../docs/desktop.md).
 
 ## Optional Companion
 

@@ -31,15 +31,25 @@ No speed or accuracy advantage is claimed until independently labeled benchmarks
 
 ## Start the browser platform
 
-Use Node.js 22 and npm:
+Use Node.js 22 and npm from the repository root:
 
 ```bash
-cd web-app
 npm ci
-npm run dev
+npm run dev:web
 ```
 
-Build the static application with `npm run build`. See the [Browser guide](docs/browser.md) for local processing, OCR, checkpoints, deployment, and troubleshooting.
+Build the static application with `npm run build:web`. See the [Browser guide](docs/browser.md) for local processing, OCR, checkpoints, deployment, and troubleshooting.
+
+## Develop the Desktop app
+
+Install prerequisites for the host OS, then run from the repository root:
+
+```bash
+npm ci --include=optional
+npm run dev:desktop
+```
+
+This prepares the target's pinned runtime and starts the shared interface in Tauri's development WebView. Keep a separate checkout for Windows, WSL, Linux, and macOS because native npm bindings and runtime files are platform-specific. See the [Desktop guide](docs/desktop.md).
 
 ## Optional Rust Companion
 
@@ -51,11 +61,11 @@ See [Companion architecture and API](docs/companion-engine.md) and [release requ
 
 ## GlyphMend Desktop
 
-The Desktop release workflow targets Windows x64 (NSIS setup), Ubuntu 24.04 x64 (`.deb`), and macOS Intel and Apple silicon (`.dmg`). It stages unsigned draft prereleases; Windows SmartScreen and macOS Gatekeeper may warn or block launch. Stable public distribution requires code signing and macOS notarization.
+The Desktop package targets Windows x64 (NSIS setup), Ubuntu 24.04 x64 (`.deb`), and macOS Intel and Apple silicon (`.dmg`). One versioned release workflow stages the browser distribution, standalone Companion packages, and Desktop installers in a single unsigned draft prerelease; Windows SmartScreen and macOS Gatekeeper may warn or block launch. Stable public distribution requires code signing and macOS notarization.
 
 The standard Windows installer uses the WebView2 bootstrapper and may need an internet connection to install WebView2 on a machine without its runtime. The alternative offline WebView2 installer adds about 127 MB and is not currently bundled. After installation, GlyphMend's frontend, PDFium, Tesseract, and all supported OCR models are bundled for offline work. The Desktop guide records the package and runtime checks: [GlyphMend Desktop](docs/desktop.md).
 
-All repository GitHub Actions workflows are manually dispatched; pushes, pull requests, and tags do not run CI automatically. See [CI/CD and releases](docs/ci.md) for local checks, workflow behavior, and release gates.
+Lightweight CI runs automatically for pull requests and pushes to `main`. Full validation and paired benchmarks remain manually selectable, and release packaging uses one versioned manual workflow. See [CI/CD and releases](docs/ci.md) for commands and release gates.
 
 ## Product contract
 

@@ -4,14 +4,20 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(scriptDir, "..");
+const repositoryRoot = path.resolve(webRoot, "..");
+const nodeModulesRoot = path.join(repositoryRoot, "node_modules");
 const packageFile = JSON.parse(fs.readFileSync(path.join(webRoot, "package.json"), "utf8"));
-const lock = JSON.parse(fs.readFileSync(path.join(webRoot, "package-lock.json"), "utf8"));
+const lock = JSON.parse(fs.readFileSync(path.join(repositoryRoot, "package-lock.json"), "utf8"));
 const outputDir = path.resolve(process.argv[2] || path.join(webRoot, "../companion/apps/companion-tauri/src-tauri/resources/runtime/notices/browser"));
 const packageEntries = lock.packages || {};
 const included = new Map();
 const visiting = new Set();
 const licenseTextCache = new Map();
 const traversalFailures = [];
+
+function installedPackageRoot(lockKey) {
+  return path.join(nodeModulesRoot, lockKey.replace(/^node_modules\//, ""));
+}
 
 function resolvePackage(ownerKey, packageName) {
   if (!ownerKey) {
@@ -36,7 +42,7 @@ function visit(ownerKey, packageName) {
   if (!key || included.has(key) || visiting.has(key)) return;
   const entry = packageEntries[key];
   if (!entry || entry.dev) return;
-  const packageJsonPath = path.join(webRoot, key, "package.json");
+  const packageJsonPath = path.join(installedPackageRoot(key), "package.json");
   if (!fs.existsSync(packageJsonPath)) {
     if (!entry.optional) traversalFailures.push(`Required installed package metadata is missing for ${key}`);
     return;
@@ -81,7 +87,7 @@ fs.mkdirSync(outputDir, { recursive: true });
 const rows = [];
 const failures = [...traversalFailures];
 for (const [key, entry] of [...included.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-  const packageRoot = path.join(webRoot, key);
+  const packageRoot = installedPackageRoot(key);
   const packageJsonPath = path.join(packageRoot, "package.json");
   if (!fs.existsSync(packageJsonPath)) {
     failures.push(`Installed package metadata is missing for ${key}`);

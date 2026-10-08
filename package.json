@@ -1,0 +1,28 @@
+{
+  "name": "glyphmend-platform",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "web-app",
+    "companion/apps/companion-tauri/web"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace glyphmend-browser",
+    "dev:desktop:web": "npm run dev:desktop --workspace glyphmend-browser",
+    "dev:desktop": "npm run desktop:prepare && npm run tauri --workspace glyphmend-desktop-build-tools -- dev",
+    "build:web": "npm run build --workspace glyphmend-browser",
+    "build:desktop:web": "npm run build:desktop --workspace glyphmend-browser",
+    "build:desktop": "npm run desktop:prepare && npm run desktop:licenses && npm run tauri --workspace glyphmend-desktop-build-tools -- build && npm run desktop:verify:runtime",
+    "desktop:icon": "npm run icon --workspace glyphmend-desktop-build-tools",
+    "desktop:prepare": "npm run prepare:runtime --workspace glyphmend-desktop-build-tools",
+    "desktop:clean:runtime": "npm run clean:runtime --workspace glyphmend-desktop-build-tools",
+    "desktop:verify:runtime": "npm run verify:runtime --workspace glyphmend-desktop-build-tools",
+    "desktop:licenses": "npm run desktop:licenses --workspace glyphmend-browser && node companion/apps/companion-tauri/src-tauri/scripts/collect-cargo-notices.mjs",
+    "brand:sync": "npm run brand:sync --workspace glyphmend-browser",
+    "lint": "npm run lint --workspace glyphmend-browser",
+    "typecheck": "npm run typecheck --workspace glyphmend-browser",
+    "test": "npm run test --workspace glyphmend-browser",
+    "license:check": "npm run license:check --workspace glyphmend-browser"
+  }
+}

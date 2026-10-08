@@ -990,9 +990,27 @@ async function extract() {
     1,
     Math.min(100, Number($("checkpointPages").value) || 20),
   );
+  // All extraction providers share this batch contract. Browser extraction is
+  // always available; the local provider uses loopback pairing in a browser
+  // and the injected Tauri adapter in the bundled Desktop app.
+  const providers = Object.freeze({
+    browser: Object.freeze({
+      id: "mupdf-wasm",
+      kind: "browser",
+      extractBatch: ({ batch }) => runBrowserBatches(batch, wanted, batchSize),
+    }),
+    local: Object.freeze({
+      id: isDesktop ? "desktop-bundled" : "paired-companion",
+      kind: isDesktop ? "tauri-ipc" : "loopback-paired",
+      extractBatch: ({ batch }) => runCompanionBatch(batch, wanted),
+    }),
+  });
+  let activeProvider = activeEngine === "companion" ? providers.local : providers.browser;
   const batches = planExtractionBatches(remaining, { engine: activeEngine, batchSize });
   const retriedPages = new Set();
   log("extract-start", `Starting ${activeEngine} extraction`, {
+    provider: activeProvider.id,
+    transport: activeProvider.kind,
     selectedPages: wanted.length,
     resumedPages: wanted.length - remaining.length,
     batchSize,
@@ -1010,16 +1028,19 @@ async function extract() {
       let result;
       if (activeEngine === "companion") {
         result = await runWithBrowserFallback({
-          companion: () => runCompanionBatch(batch, wanted),
-          browser: () => runBrowserBatches(batch, wanted, batchSize),
+          companion: () => providers.local.extractBatch({ batch }),
+          browser: () => providers.browser.extractBatch({ batch }),
           onFallback: (error) => {
             activeEngine = "browser";
+            activeProvider = providers.browser;
             state.engine = "mupdf-wasm";
             $("engineUsedStatus").textContent = "This and the remaining pages are using browser extraction after a visible Companion fallback.";
             const warning = {
               type: "companion-fallback",
               message: "Companion was unavailable or failed; this and remaining pages will use browser extraction.",
               reason: error.message,
+              failedProvider: providers.local.id,
+              fallbackProvider: providers.browser.id,
             };
             state.warnings.push(warning);
             log("engine-fallback", warning.message, { reason: error.message }, "warning");
@@ -1027,7 +1048,7 @@ async function extract() {
           },
         });
       } else {
-        result = await runBatch(batch, wanted);
+        result = await activeProvider.extractBatch({ batch });
       }
       const retryPages = result.failedPages.filter(
         (page) => !retriedPages.has(page),

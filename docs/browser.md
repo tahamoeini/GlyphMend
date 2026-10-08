@@ -8,7 +8,7 @@ The browser edition does not upload the selected PDF or extracted content. Proce
 
 ## Branding at runtime
 
-The browser reads `branding.json` at startup and applies the configured product name, slogan, and logo to the shell. `npm run brand:sync` copies the repository-level brand definition and logo into the browser public assets and regenerates PWA metadata.
+The browser reads `branding.json` at startup and applies the configured product name, slogan, and logo to the shell. Run `npm run brand:sync` from the repository root to copy the brand definition and logo into the browser public assets and regenerate PWA metadata.
 
 A deployed build can replace its runtime `branding.json` and referenced logo without rebuilding the extraction code. The app stores the last successfully loaded brand as an offline fallback. If the installable PWA name or install icon changes, run the brand sync and rebuild because those values live in manifest metadata.
 
@@ -59,7 +59,7 @@ complete          → extraction and document-level cleanup finished
 
 ## Deployment checklist
 
-1. Run npm ci, npm test, and npm run build in web-app/. The build verifies the three copied MuPDF files, checks that the service worker precaches them, and fetches them from a local production preview.
+1. From the repository root, run `npm ci` and `npm run build:web`. For manual full validation, also run `npm test`. The build verifies the three copied MuPDF files, checks that the service worker precaches them, and fetches them from a local production preview.
 2. Deploy the contents of `web-app/dist/` over HTTPS.
 3. Verify `branding.json`, the configured logo, MuPDF, OCR, PDF.js WASM, and service-worker assets return HTTP 200.
 4. Test one native-text PDF and one scanned PDF in the target browser. Confirm the MuPDF requests succeed and extraction reaches engine-ready.

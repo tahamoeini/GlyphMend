@@ -5,8 +5,9 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const nodeModulesDir = path.join(rootDir, "node_modules");
-const require = createRequire(import.meta.url);
+const repositoryRoot = path.resolve(rootDir, "..");
+const nodeModulesDir = path.join(repositoryRoot, "node_modules");
+const require = createRequire(path.join(repositoryRoot, "package.json"));
 
 const rollupVersion = readPackageVersion("rollup/package.json");
 const esbuildVersion = readPackageVersion("esbuild/package.json");
@@ -37,7 +38,7 @@ if (missingPackages.length === 0) {
 // the safe, deterministic place to resolve optional platform packages.
 console.error(
   `[native-deps] Missing native packages for ${process.platform}/${process.arch}: ` +
-    `${missingPackages.join(", ")}. Run \`npm install\` from web-app after removing its node_modules directory.`,
+    `${missingPackages.join(", ")}. Run \`npm ci --include=optional\` from the repository root.`,
 );
 process.exit(1);
 

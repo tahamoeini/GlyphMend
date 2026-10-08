@@ -11,6 +11,8 @@
         "desktop:licenses": "node ./scripts/collect-third-party-notices.mjs ../companion/apps/companion-tauri/src-tauri/resources/runtime/notices/browser",
         "predev": "npm run brand:sync && npm run native:deps",
         "dev": "vite",
+        "predev:desktop": "npm run brand:sync && npm run native:deps",
+        "dev:desktop": "vite --mode desktop --host 127.0.0.1 --port 1420 --strictPort",
         "prebuild": "npm run brand:sync && npm run native:deps",
         "build": "vite build && node ./scripts/verify-mupdf-assets.mjs",
         "prebuild:desktop": "npm run brand:sync && npm run native:deps",

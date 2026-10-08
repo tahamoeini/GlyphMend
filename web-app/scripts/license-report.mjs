@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(scriptDir, "..");
+const repositoryRoot = path.resolve(webRoot, "..");
 const checkMode = process.argv.includes("--check");
 
 const browserPolicy = Object.freeze({
@@ -96,7 +97,7 @@ function row(columns) {
 }
 
 const packageJson = readJson(path.join(webRoot, "package.json"));
-const lock = readJson(path.join(webRoot, "package-lock.json"));
+const lock = readJson(path.join(repositoryRoot, "package-lock.json"));
 
 const directBrowser = {
   ...(packageJson.dependencies || {}),

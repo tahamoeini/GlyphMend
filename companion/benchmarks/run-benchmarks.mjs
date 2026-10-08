@@ -12,6 +12,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const benchmarkDir = path.join(repoRoot, "companion/benchmarks");
 const corpusDir = path.join(benchmarkDir, "corpus");
 const webRoot = path.join(repoRoot, "web-app");
+const npmLock = JSON.parse(fs.readFileSync(path.join(repoRoot, "package-lock.json"), "utf8"));
 const manifestBytes = fs.readFileSync(path.join(corpusDir, "manifest.json"));
 const manifest = JSON.parse(manifestBytes);
 const manifestSha256 = createHash("sha256").update(manifestBytes).digest("hex");
@@ -670,8 +671,8 @@ async function main() {
           );
           const normalized = normalizeDocument(measured.value.semanticDocument || measured.value, fixture.documentClass);
           const engineVersion = mode === "browser"
-            ? "MuPDF " + (JSON.parse(fs.readFileSync(path.join(webRoot, "package-lock.json"), "utf8")).packages["node_modules/mupdf"].version)
-              + "; Tesseract.js " + JSON.parse(fs.readFileSync(path.join(webRoot, "package-lock.json"), "utf8")).packages["node_modules/tesseract.js"].version
+            ? "MuPDF " + npmLock.packages["node_modules/mupdf"].version
+              + "; Tesseract.js " + npmLock.packages["node_modules/tesseract.js"].version
             : String(normalized.engine.version || appVersion);
           raw.runs.push({
             documentId: fixture.id,

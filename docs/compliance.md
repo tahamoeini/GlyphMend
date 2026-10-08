@@ -13,10 +13,10 @@ For primary license references, see the [GNU AGPL v3 text](https://www.gnu.org/l
 
 ## Dependency and release controls
 
-- npm run license:check checks browser dependency licensing from web-app/.
+- `npm run license:check` checks browser dependency licensing against the single root npm lockfile.
 - cargo deny check applies the Rust advisory, license, and dependency policy in companion/deny.toml. The Tauri advisory exceptions are listed there and should be reviewed as that dependency tree changes.
 - Runtime preparation pins PDFium and OCR model sources and verifies downloaded hashes. Packaging generates runtime manifests and preserves upstream notices.
-- Release workflows produce checksums and SPDX SBOMs; Companion releases also create provenance attestations. Verify the actual release artifacts and workflow run before distribution.
+- The unified release workflow produces checksums, product notices, SPDX SBOMs, and provenance attestations for the versioned browser, Companion, and Desktop artifacts. Verify the actual release assets and workflow run before distribution.
 
 A passing package-license or dependency-policy check is one control; it does not certify every legal obligation for a deployment.
 

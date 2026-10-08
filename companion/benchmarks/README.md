@@ -17,7 +17,7 @@ From the repository root, run:
 
 Repeat with --ocr-accuracy high-accuracy to produce a separate Best-model dataset. Each run uses identical PDF bytes in both engines, alternates engine order by repeat, records engine and model hashes, per-page fallback details, character and word error, reading order, structure labels, elapsed extraction time, and peak process-tree RSS memory. The browser platform currently uses its bundled English best_int OCR model; that model identity is recorded separately from the selected Companion model. Treat those as distinct configurations when interpreting results.
 
-The manual-only .github/workflows/companion-benchmarks.yml workflow installs the pinned Linux runtimes and uploads raw and evaluated results as a workflow artifact. It does not run on pushes or pull requests.
+Select `benchmark` in `.github/workflows/platform-ci.yml` to run the paired benchmark manually. It installs the pinned Linux runtimes and uploads raw and evaluated results as a workflow artifact; it does not run on pushes or pull requests.
 
 ## Browser-only baseline
 
