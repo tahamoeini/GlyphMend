@@ -18,6 +18,10 @@ Maintain versioned Semantic Document IR v2 fixtures consumed by Rust and the bro
 
 Build six portable packages on GitHub-hosted Windows, macOS, and Linux runners without paid signing credentials. Mark packages and release notes as unsigned, include executables, PDFium and Tesseract runtime files, English Fast and Best models, notices, checksums, an SBOM, and provenance. Document expected Windows SmartScreen and macOS Gatekeeper warnings.
 
+### Complete Desktop release validation
+
+Run the native Windows x64, Ubuntu 24.04 x64, macOS Intel, and Apple silicon jobs. Measure full installer sizes and validate clean installs, paths with spaces, resource lookup, signed/runtime dependencies, and OCR languages. Test the installed WebView offline with workers, WASM, checkpoints, logs, restart, and upgrade. Configure signing and notarization before stable distribution.
+
 ### Promote only measured releases
 
 Publish the first Companion version as a prerelease. Promote it to stable only after repeatable benchmark improvements are documented for specific document classes and browser-only behavior has no regression.

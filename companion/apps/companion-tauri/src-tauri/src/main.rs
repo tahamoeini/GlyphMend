@@ -3,11 +3,10 @@
 #![forbid(unsafe_code)]
 
 use companion_contract::{InputChunk, InputComplete, JobCreate, MAX_CHUNK_BYTES};
-use companion_core::DiagnosticMockProvider;
 use companion_extractor::PdfiumTesseractProvider;
 use companion_service::{EventsPage, JobManager, JobResultResponse};
-use std::{collections::HashMap, sync::Arc, time::Duration};
-use tauri::State;
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use tauri::{path::BaseDirectory, Manager, State};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -20,15 +19,15 @@ struct PendingChunkParts {
     parts: Vec<Option<Vec<u8>>>,
 }
 
-struct Runtime(
-    Arc<JobManager>,
-    CancellationToken,
-    tokio::sync::Mutex<HashMap<(Uuid, u64), PendingChunkParts>>,
-);
+struct Runtime {
+    service: Arc<JobManager>,
+    cleanup_cancellation: CancellationToken,
+    pending_chunks: tokio::sync::Mutex<HashMap<(Uuid, u64), PendingChunkParts>>,
+}
 
 impl Drop for Runtime {
     fn drop(&mut self) {
-        self.1.cancel();
+        self.cleanup_cancellation.cancel();
     }
 }
 
@@ -36,7 +35,10 @@ impl Drop for Runtime {
 async fn companion_capabilities(
     runtime: State<'_, Runtime>,
 ) -> Result<Vec<companion_contract::Capability>, String> {
-    runtime.0.capabilities().map_err(|error| error.to_string())
+    runtime
+        .service
+        .capabilities()
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -45,7 +47,7 @@ async fn companion_create_job(
     request: JobCreate,
 ) -> Result<String, String> {
     runtime
-        .0
+        .service
         .create(Uuid::nil(), request)
         .await
         .map(|id| id.to_string())
@@ -63,7 +65,7 @@ async fn companion_append_chunk(
 ) -> Result<(), String> {
     let id = parse_job_id(&job_id)?;
     let complete = append_chunk_part(
-        &mut runtime.2.lock().await,
+        &mut runtime.pending_chunks.lock().await,
         id,
         sequence,
         part_index,
@@ -74,7 +76,7 @@ async fn companion_append_chunk(
         return Ok(());
     };
     runtime
-        .0
+        .service
         .append_chunk(
             Uuid::nil(),
             id,
@@ -112,11 +114,11 @@ fn append_chunk_part(
             return Err("Tauri input chunk part count changed".into());
         }
         if let Some(previous) = &existing.parts[part_index] {
-            return if previous == &body {
-                Ok(None)
-            } else {
-                Err("conflicting duplicate Tauri input chunk part".into())
-            };
+            if previous == &body {
+                return Ok(None);
+            }
+            pending.remove(&key);
+            return Err("conflicting duplicate Tauri input chunk part".into());
         }
         if existing.total_bytes + body.len() > MAX_CHUNK_BYTES {
             pending.remove(&key);
@@ -153,12 +155,17 @@ async fn companion_complete_job(
 ) -> Result<(), String> {
     let id = parse_job_id(&job_id)?;
     let should_run = runtime
-        .0
+        .service
         .complete_input(Uuid::nil(), id, request)
         .await
         .map_err(|error| error.to_string())?;
+    runtime
+        .pending_chunks
+        .lock()
+        .await
+        .retain(|(pending_job, _), _| *pending_job != id);
     if should_run {
-        let service = Arc::clone(&runtime.0);
+        let service = Arc::clone(&runtime.service);
         tauri::async_runtime::spawn(async move {
             let _ = service.run_queued(id).await;
         });
@@ -175,7 +182,7 @@ async fn companion_job_events(
 ) -> Result<EventsPage, String> {
     let id = parse_job_id(&job_id)?;
     runtime
-        .0
+        .service
         .events_after(
             Uuid::nil(),
             id,
@@ -193,7 +200,7 @@ async fn companion_job_result(
     job_id: String,
 ) -> Result<JobResultResponse, String> {
     runtime
-        .0
+        .service
         .result(Uuid::nil(), parse_job_id(&job_id)?)
         .await
         .map_err(|error| error.to_string())
@@ -205,7 +212,7 @@ async fn companion_acknowledge_result(
     job_id: String,
 ) -> Result<(), String> {
     runtime
-        .0
+        .service
         .acknowledge_result(Uuid::nil(), parse_job_id(&job_id)?)
         .await
         .map_err(|error| error.to_string())
@@ -213,11 +220,18 @@ async fn companion_acknowledge_result(
 
 #[tauri::command]
 async fn companion_cancel_job(runtime: State<'_, Runtime>, job_id: String) -> Result<(), String> {
+    let id = parse_job_id(&job_id)?;
     runtime
-        .0
-        .cancel(Uuid::nil(), parse_job_id(&job_id)?)
+        .service
+        .cancel(Uuid::nil(), id)
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    runtime
+        .pending_chunks
+        .lock()
+        .await
+        .retain(|(pending_job, _), _| *pending_job != id);
+    Ok(())
 }
 
 fn parse_job_id(value: &str) -> Result<Uuid, String> {
@@ -227,21 +241,32 @@ fn parse_job_id(value: &str) -> Result<Uuid, String> {
 }
 
 fn main() {
-    let service = Arc::new(
-        JobManager::with_default_storage_providers(vec![
-            Arc::new(DiagnosticMockProvider),
-            Arc::new(PdfiumTesseractProvider),
-        ])
-        .expect("companion temporary storage must be creatable"),
-    );
-    let cleanup_cancellation = CancellationToken::new();
-    tauri::async_runtime::spawn(Arc::clone(&service).cleanup_loop(cleanup_cancellation.clone()));
     tauri::Builder::default()
-        .manage(Runtime(
-            service,
-            cleanup_cancellation,
-            tokio::sync::Mutex::new(HashMap::new()),
-        ))
+        .setup(|app| {
+            let resource_path = |path: &str| app.path().resolve(path, BaseDirectory::Resource);
+            let pdfium_dir = resource_path("runtime/pdfium")?;
+            let tessdata_root = resource_path("runtime/tessdata")?;
+            let cache_dir = app.path().app_cache_dir()?;
+            std::fs::create_dir_all(&cache_dir)?;
+            let storage_dir: PathBuf = cache_dir.join(format!("glyphmend-jobs-{}", Uuid::new_v4()));
+            let service = Arc::new(JobManager::with_providers(
+                vec![Arc::new(PdfiumTesseractProvider::with_runtime_paths(
+                    pdfium_dir,
+                    tessdata_root,
+                ))],
+                storage_dir,
+            )?);
+            let cleanup_cancellation = CancellationToken::new();
+            tauri::async_runtime::spawn(
+                Arc::clone(&service).cleanup_loop(cleanup_cancellation.clone()),
+            );
+            app.manage(Runtime {
+                service,
+                cleanup_cancellation,
+                pending_chunks: tokio::sync::Mutex::new(HashMap::new()),
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             companion_capabilities,
             companion_create_job,

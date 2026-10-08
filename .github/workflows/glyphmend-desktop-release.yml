@@ -1,0 +1,286 @@
+name: GlyphMend Desktop prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Desktop prerelease version without the glyphmend-v prefix (for example 0.1.0-beta.1)
+        type: string
+        required: true
+        default: 0.1.0-beta.1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: glyphmend-desktop-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  validate-release:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Require manual release dispatch from the default branch
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ "$RELEASE_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+            echo "Desktop releases must be dispatched from the default branch ($DEFAULT_BRANCH)." >&2
+            exit 1
+          fi
+      - id: version
+        name: Validate prerelease version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          node -e 'const v=process.env.VERSION; if(!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-beta\.(0|[1-9]\d*)$/.test(v)) process.exit(1)'
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=glyphmend-v$VERSION" >> "$GITHUB_OUTPUT"
+
+  package:
+    needs: validate-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            platform: windows-x64
+            vcpkg_triplet: x64-windows-static-md
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            platform: ubuntu-24.04-x64
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            platform: macos-12-intel
+          - os: macos-15
+            target: aarch64-apple-darwin
+            platform: macos-12-apple-silicon
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      TARGET: ${{ matrix.target }}
+      GLYPHMEND_VERSION: ${{ needs.validate-release.outputs.version }}
+      VCPKG_TRIPLET: ${{ matrix.vcpkg_triplet }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: 1.97.0
+          target: ${{ matrix.target }}
+          components: rustfmt, clippy
+          cache: false
+      - name: Install Linux Tauri and OCR runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libwebkit2gtk-4.1-dev libgtk-3-dev libtesseract-dev libleptonica-dev libcurl4-openssl-dev pkg-config patchelf
+      - name: Install macOS OCR runtime dependencies
+        if: runner.os == 'macOS'
+        run: brew install tesseract leptonica pkg-config
+      - name: Install statically linked Windows OCR dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          vcpkg install "tesseract:$env:VCPKG_TRIPLET"
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
+          "VCPKG_DEFAULT_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
+          "VCPKGRS_DYNAMIC=0" >> $env:GITHUB_ENV
+      - name: Install browser dependencies
+        run: npm ci
+        working-directory: web-app
+      - name: Install Tauri CLI
+        run: npm ci
+        working-directory: companion/apps/companion-tauri/web
+      - name: Check browser dependency licenses
+        run: npm run license:check
+        working-directory: web-app
+      - name: Verify the Browser/PWA build
+        run: npm run build
+        working-directory: web-app
+        env:
+          VITE_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}/web-app
+          VITE_LICENSE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/web-app/LICENSE
+      - name: Set Desktop package version from the tag
+        run: node companion/apps/companion-tauri/src-tauri/scripts/set-version.mjs
+        env:
+          GLYPHMEND_VERSION: ${{ needs.validate-release.outputs.version }}
+      - name: Prepare pinned PDFium and OCR resources
+        run: node companion/apps/companion-tauri/src-tauri/scripts/prepare-runtime.mjs
+      - name: Collect browser and npm package license texts
+        run: npm run desktop:licenses
+        working-directory: web-app
+      - name: Copy runtime for native smoke tests to a path with spaces
+        run: |
+          node -e "const fs=require('node:fs'); const path=require('node:path'); const target=path.join(process.env.RUNNER_TEMP,'GlyphMend Runtime','resources'); fs.mkdirSync(target,{recursive:true}); fs.cpSync('companion/apps/companion-tauri/src-tauri/resources/runtime',path.join(target,'runtime'),{recursive:true})"
+      - name: Smoke-test digital and raster-only PDFs on the native host
+        run: cargo test --locked -p companion-tauri --target ${{ matrix.target }} --test desktop_runtime
+        working-directory: companion
+        env:
+          GLYPHMEND_RUNTIME_SMOKE: "1"
+          GLYPHMEND_TEST_RESOURCE_DIR: ${{ runner.temp }}/GlyphMend Runtime/resources
+          VCPKGRS_TRIPLET: ${{ matrix.vcpkg_triplet }}
+          VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}
+          VCPKGRS_DYNAMIC: "0"
+      - name: Collect locked Rust dependency license texts
+        run: node companion/apps/companion-tauri/src-tauri/scripts/collect-cargo-notices.mjs
+        env:
+          TARGET: ${{ matrix.target }}
+      - name: Build the native installer
+        run: npm run tauri -- build --target ${{ matrix.target }}
+        working-directory: companion/apps/companion-tauri/web
+        env:
+          VITE_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}/web-app
+          VITE_LICENSE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/web-app/LICENSE
+      - name: Validate the assembled runtime
+        run: npm run verify:runtime
+        working-directory: companion/apps/companion-tauri/web
+        env:
+          TARGET: ${{ matrix.target }}
+      - name: Create release staging directory
+        shell: bash
+        run: |
+          node -e "require('node:fs').mkdirSync('companion/release', { recursive: true })"
+      - name: Install and inspect the Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem companion/target/${{ matrix.target }}/release/bundle/nsis -Filter *.exe | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer was not produced.' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'GlyphMend Desktop Smoke'
+          $startInfo = [System.Diagnostics.ProcessStartInfo]::new($installer.FullName)
+          $startInfo.ArgumentList.Add('/S')
+          $startInfo.ArgumentList.Add("/D=$installDir")
+          $process = [System.Diagnostics.Process]::Start($startInfo)
+          $process.WaitForExit()
+          if ($process.ExitCode -ne 0) { throw "NSIS installer failed with exit code $($process.ExitCode)." }
+          $manifest = Get-ChildItem -LiteralPath $installDir -Filter runtime-manifest.json -Recurse | Select-Object -First 1
+          if (-not $manifest) { throw 'Installed bundle is missing its runtime manifest.' }
+          $runtime = $manifest.Directory.FullName
+          foreach ($relative in @('pdfium/pdfium.dll', 'tessdata/fast/eng.traineddata', 'tessdata/best/chi_sim.traineddata', 'notices/LICENSES.txt')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $runtime $relative))) { throw "Installed runtime is missing $relative" }
+          }
+      - name: Extract and inspect the Linux package
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb=$(find companion/target/${{ matrix.target }}/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)
+          test -n "$deb"
+          root="$RUNNER_TEMP/GlyphMend Desktop Smoke"
+          mkdir -p "$root"
+          dpkg-deb --extract "$deb" "$root"
+          test -f "$root/usr/lib/glyphmend/runtime/runtime-manifest.json"
+          test -f "$root/usr/lib/glyphmend/runtime/pdfium/libpdfium.so"
+          test -f "$root/usr/lib/glyphmend/runtime/tessdata/best/chi_sim.traineddata"
+          test -f "$root/usr/lib/glyphmend/runtime/notices/LICENSES.txt"
+          depends=$(dpkg-deb --field "$deb" Depends)
+          for package in libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 librsvg2-2 libc6 libgcc-s1 libstdc++6; do
+            [[ "$depends" == *"$package"* ]] || { echo "Missing Debian runtime dependency: $package" >&2; exit 1; }
+          done
+          executable=$(find "$root/usr/bin" -maxdepth 1 -type f -print -quit)
+          test -n "$executable"
+          ldd "$executable" | tee "$RUNNER_TEMP/glyphmend-ldd.txt"
+          ! grep -q 'not found' "$RUNNER_TEMP/glyphmend-ldd.txt"
+      - name: Mount and inspect the macOS disk image
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg=$(find companion/target/${{ matrix.target }}/release/bundle/dmg -maxdepth 1 -type f -name '*.dmg' -print -quit)
+          test -n "$dmg"
+          mount="$RUNNER_TEMP/GlyphMend Desktop Smoke"
+          mkdir -p "$mount"
+          hdiutil attach -nobrowse -mountpoint "$mount" "$dmg"
+          app="$mount/GlyphMend.app"
+          test -f "$app/Contents/Resources/runtime/runtime-manifest.json"
+          test -f "$app/Contents/Resources/runtime/pdfium/libpdfium.dylib"
+          test -f "$app/Contents/Resources/runtime/tessdata/best/chi_sim.traineddata"
+          test -f "$app/Contents/Resources/runtime/notices/LICENSES.txt"
+          executable=$(find "$app/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)
+          test -n "$executable"
+          ! otool -L "$executable" | grep -E '/opt/homebrew|/usr/local/Cellar'
+          hdiutil detach "$mount"
+      - name: Create native runtime SPDX SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: companion/apps/companion-tauri/src-tauri/resources/runtime
+          format: spdx-json
+          output-file: companion/release/SBOM-${{ matrix.platform }}.spdx.json
+          upload-artifact: false
+      - name: Copy and checksum the Windows installer and SBOM
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path companion/release -Force | Out-Null
+          $installer = Get-ChildItem companion/target/${{ matrix.target }}/release/bundle/nsis -Filter *.exe | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer was not produced.' }
+          Copy-Item -LiteralPath $installer.FullName -Destination "companion/release/GlyphMend-$env:GLYPHMEND_VERSION-${{ matrix.platform }}.exe"
+          Get-ChildItem companion/release -File | Where-Object {$_.Name -notlike 'SHA256SUMS*'} | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          } | Set-Content -LiteralPath "companion/release/SHA256SUMS-${{ matrix.platform }}" -Encoding ascii
+      - name: Copy and checksum the macOS or Linux installer and SBOM
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p companion/release
+          case "${{ runner.os }}" in
+            macOS) installer=$(find companion/target/${{ matrix.target }}/release/bundle/dmg -maxdepth 1 -type f -name '*.dmg' -print -quit) ;;
+            Linux) installer=$(find companion/target/${{ matrix.target }}/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit) ;;
+          esac
+          test -n "$installer"
+          case "${{ runner.os }}" in
+            macOS) extension=dmg ;;
+            Linux) extension=deb ;;
+          esac
+          cp "$installer" "companion/release/GlyphMend-${GLYPHMEND_VERSION}-${{ matrix.platform }}.$extension"
+          (cd companion/release && find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -print0 | xargs -0 sha256sum > "SHA256SUMS-${{ matrix.platform }}")
+      - name: Attest unsigned package and SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: companion/release/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: glyphmend-desktop-${{ matrix.platform }}
+          path: companion/release/*
+          if-no-files-found: error
+          retention-days: 30
+
+  draft-prerelease:
+    needs: [validate-release, package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: glyphmend-desktop-*
+          path: release
+          merge-multiple: true
+      - name: Create an unsigned draft prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate-release.outputs.tag }}
+          VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          args=("$TAG" release/* --title "GlyphMend $VERSION (unsigned prerelease)" --draft --prerelease --target "$GITHUB_SHA" --notes "UNSIGNED PRERELEASE: GlyphMend Desktop installers are not code-signed or notarized. Windows SmartScreen or macOS Gatekeeper may warn or block launch. Verify the included SHA-256 checksums before running. The installer artifacts are for Windows x64, Ubuntu 24.04 x64, macOS Intel, and Apple silicon. Public stable distribution requires code signing and macOS notarization.")
+          gh release create --repo "$GITHUB_REPOSITORY" "${args[@]}"

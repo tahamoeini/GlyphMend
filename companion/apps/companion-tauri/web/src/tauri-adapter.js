@@ -7,7 +7,15 @@ function invoke(command, payload) {
   return call(command, payload);
 }
 
-async function subscribe(jobId, onEvent, { waitMs = 15_000, signal } = {}) {
+function throwIfAborted(signal) {
+  if (signal?.aborted) {
+    const error = new Error("Companion extraction stopped.");
+    error.name = "AbortError";
+    throw error;
+  }
+}
+
+function subscribe(jobId, onEvent, { waitMs = 1_000, signal } = {}) {
   let stopped = false;
   let sequence = 0;
   const done = (async () => {
@@ -37,8 +45,12 @@ globalThis.GlyphMendCompanion = Object.freeze({
     capabilities: await invoke("companion_capabilities"),
   }),
   getCapabilities: () => invoke("companion_capabilities"),
-  createJob: async (request) => ({ jobId: await invoke("companion_create_job", { request }) }),
-  appendChunk: async (jobId, sequence, body) => {
+  createJob: async (request, { signal } = {}) => {
+    throwIfAborted(signal);
+    return { jobId: await invoke("companion_create_job", { request }) };
+  },
+  appendChunk: async (jobId, sequence, body, { signal } = {}) => {
+    throwIfAborted(signal);
     if (!Number.isSafeInteger(sequence) || sequence < 0) {
       throw new TypeError("Invalid Companion chunk sequence.");
     }
@@ -48,6 +60,7 @@ globalThis.GlyphMendCompanion = Object.freeze({
     }
     const partCount = Math.ceil(bytes.byteLength / MAX_IPC_CHUNK_BYTES);
     for (let offset = 0, part = 0; offset < bytes.length; offset += MAX_IPC_CHUNK_BYTES, part += 1) {
+      throwIfAborted(signal);
       const end = Math.min(offset + MAX_IPC_CHUNK_BYTES, bytes.length);
       await invoke("companion_append_chunk", {
         jobId,
@@ -58,9 +71,18 @@ globalThis.GlyphMendCompanion = Object.freeze({
       });
     }
   },
-  completeInput: (jobId, request) => invoke("companion_complete_job", { jobId, request }),
-  getResult: (jobId) => invoke("companion_job_result", { jobId }),
-  acknowledgeResult: (jobId) => invoke("companion_acknowledge_result", { jobId }),
+  completeInput: (jobId, request, { signal } = {}) => {
+    throwIfAborted(signal);
+    return invoke("companion_complete_job", { jobId, request });
+  },
+  getResult: (jobId, { signal } = {}) => {
+    throwIfAborted(signal);
+    return invoke("companion_job_result", { jobId });
+  },
+  acknowledgeResult: (jobId, { signal } = {}) => {
+    throwIfAborted(signal);
+    return invoke("companion_acknowledge_result", { jobId });
+  },
   subscribe,
   cancel: (jobId) => invoke("companion_cancel_job", { jobId }),
   disconnect: async () => {},

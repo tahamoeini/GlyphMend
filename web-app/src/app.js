@@ -3,7 +3,6 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import DOMPurify from "dompurify";
 
 import { marked } from "marked";
-import { registerSW } from "virtual:pwa-register";
 import {
   cleanupDocument,
   documentMetrics,
@@ -58,26 +57,8 @@ import {
 } from "./localization.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
-if (location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname)) {
-  navigator.serviceWorker?.getRegistrations?.().then((registrations) =>
-    Promise.all(registrations.map((registration) => registration.unregister())),
-  );
-  caches?.keys?.().then((names) =>
-    Promise.all(
-      names
-        .filter(
-          (name) =>
-            name.startsWith("workbox-") ||
-            name.startsWith("glyphmend") ||
-            name.startsWith("pdf-sanitizer"),
-        )
-        .map((name) => caches.delete(name)),
-    ),
-  );
-} else {
-  registerSW({ immediate: true });
-}
 const $ = (id) => document.getElementById(id);
+const isDesktop = import.meta.env.MODE === "desktop";
 setLocalizedText($("topFileName"), "Document workspace");
 // OCR runtime cache and structural recovery changed in this release. Existing
 // checkpoints must not be presented as results from the current pipeline.
@@ -107,6 +88,7 @@ const state = {
   checkpointWrites: new Set(),
   checkpointError: null,
   companionBridge: null,
+  companionReady: null,
   companionCapabilities: [],
   reviewQueue: [],
   selectedReviewId: null,
@@ -856,20 +838,24 @@ function runBatch(batch, wanted) {
   });
 }
 async function runCompanionBatch(batch, wanted) {
-  const bridge = state.companionBridge;
-  if (!bridge) throw new Error("No Companion connection is active.");
-  if (wanted.length > 100 && bridge.session?.protocolVersion?.minor < 3) {
-    throw new Error("The connected Companion does not support bounded result acknowledgement.");
-  }
-  const supportsExtraction = state.companionCapabilities.some(
-    (capability) => capability.id === "glyphmend.document.extract.v2" && !capability.diagnosticOnly,
-  );
-  if (!supportsExtraction) throw new Error("The connected Companion does not support document extraction.");
-
   const controller = new AbortController();
   state.abortBatch = () => controller.abort();
   let companionJobId;
   try {
+    if (isDesktop && state.companionReady) await state.companionReady;
+    if (controller.signal.aborted) {
+      throw Object.assign(new Error("Companion extraction stopped."), { aborted: true });
+    }
+    const bridge = state.companionBridge;
+    if (!bridge) throw new Error("No Companion connection is active.");
+    if (wanted.length > 100 && bridge.session?.protocolVersion?.minor < 3) {
+      throw new Error("The connected Companion does not support bounded result acknowledgement.");
+    }
+    const supportsExtraction = state.companionCapabilities.some(
+      (capability) => capability.id === "glyphmend.document.extract.v2" && !capability.diagnosticOnly,
+    );
+    if (!supportsExtraction) throw new Error("The connected Companion does not support document extraction.");
+
     const document = await bridge.extractDocument({
       bytes: state.pdfBytes,
       pageCount: state.pageCount,
@@ -900,6 +886,8 @@ async function runCompanionBatch(batch, wanted) {
     }
     const engine = document.metadata?.engine || { id: "glyphmend.pdfium-tesseract", version: "unknown" };
     state.engine = engine.id;
+    const engineLabel = isDesktop ? "bundled Desktop engine" : "connected Companion engine";
+    $("engineUsedStatus").textContent = `This batch used the ${engineLabel} (${engine.id} ${engine.version}).`;
     for (const pageNumber of batch) {
       const page = byPage.get(pageNumber);
       const semanticDocument = createSemanticDocumentIR({
@@ -987,6 +975,11 @@ async function extract() {
   state.engine = activeEngine === "companion" ? "glyphmend.pdfium-tesseract" : "mupdf-wasm";
   state.checkpointError = null;
   state.startedAt = new Date().toISOString();
+  $("engineUsedStatus").textContent = activeEngine === "companion"
+    ? isDesktop
+      ? "This job starts with the bundled local engine. Browser fallback is available if it fails."
+      : "This job starts with the connected Companion. Browser fallback is available if it fails."
+    : "This job uses browser extraction.";
   setWorking(true);
   setStatus(
     "Starting extraction…",
@@ -1022,6 +1015,7 @@ async function extract() {
           onFallback: (error) => {
             activeEngine = "browser";
             state.engine = "mupdf-wasm";
+            $("engineUsedStatus").textContent = "This and the remaining pages are using browser extraction after a visible Companion fallback.";
             const warning = {
               type: "companion-fallback",
               message: "Companion was unavailable or failed; this and remaining pages will use browser extraction.",
@@ -1931,7 +1925,30 @@ function bindCompanionControl(buttonId, endpointId, codeId, statusId) {
     }
   };
 }
+async function connectDesktopCompanion() {
+  const status = $("engineRuntimeStatus");
+  status.textContent = "Connecting to the bundled local engine…";
+  try {
+    const { createCompanionBridge } = await import("./features/companion/bridge.js");
+    const bridge = await createCompanionBridge();
+    const connection = await bridge.connect("", "");
+    const capabilities = connection.capabilities || [];
+    const extraction = capabilities.find(
+      (capability) => capability.id === "glyphmend.document.extract.v2" && !capability.diagnosticOnly,
+    );
+    if (connection.status !== "connected" || !extraction) {
+      throw new Error("The bundled runtime does not expose document extraction.");
+    }
+    state.companionBridge = bridge;
+    state.companionCapabilities = capabilities;
+    status.textContent = `Bundled engine ready · ${extraction.version} · Semantic Document IR v${extraction.irSchemaVersion} · OCR languages are listed above. Browser extraction remains available.`;
+  } catch (error) {
+    status.textContent = `Bundled engine unavailable; browser extraction remains available. ${error.message}`;
+    log("desktop-engine-unavailable", error.message, {}, "error");
+  }
+}
 async function connectCompanionFromFragment() {
+  if (isDesktop) return;
   const fragment = location.hash;
   const parameters = new URLSearchParams(fragment.replace(/^#/, ""));
   if (!parameters.has("companionCode")) return;
@@ -1965,7 +1982,24 @@ function bind() {
   requestAnimationFrame(() => syncTabIndicator());
   bindCompanionControl("welcomeCompanionButton", "welcomeCompanionEndpoint", "welcomeCompanionCode", "welcomeCompanionStatus");
   bindCompanionControl("settingsCompanionButton", "settingsCompanionEndpoint", "settingsCompanionCode", "settingsCompanionStatus");
-  void connectCompanionFromFragment();
+  if (isDesktop) {
+    document.title = "GlyphMend";
+    $("welcomeCompanionControls").classList.add("hidden");
+    $("settingsCompanionControls").classList.add("hidden");
+    $("extractionEngine").value = "companion";
+    $("extractionEngine").options[1].textContent = "Bundled Desktop engine";
+    $("engineRuntimeStatus").textContent = "Bundled local PDFium and Tesseract engine · Semantic Document IR v2 · Fast and High Accuracy OCR.";
+    const privacyCopy = document.querySelector(".welcome-trust small");
+    if (privacyCopy) privacyCopy.textContent = "Your PDF stays in this app while you work.";
+    const browserCard = document.querySelector(".welcome-feature:first-child span:last-child small");
+    if (browserCard) browserCard.textContent = "Available as a fallback";
+    const engineCard = document.querySelector(".welcome-engine-card");
+    if (engineCard) engineCard.querySelector("strong").textContent = "Ready in this app";
+    if (engineCard) engineCard.querySelector("em").textContent = "PDFium + OCR";
+    state.companionReady = connectDesktopCompanion();
+  } else {
+    void connectCompanionFromFragment();
+  }
   $("pdfInput").onchange = (e) => openFile(e.target.files[0]);
   const dz = $("dropZone");
   ["dragenter", "dragover"].forEach((n) =>

@@ -7,10 +7,12 @@
 | [Browser operations](browser.md) | Local extraction, OCR, recovery, deployment, and troubleshooting. |
 | [Browser application](../web-app/README.md) | Browser build, behavior, exports, and licensing. |
 | [Companion engine](companion-engine.md) | Loopback connection, extraction API, fallback, OCR choices, and packaging. |
+| [GlyphMend Desktop](desktop.md) | Native app modes, runtime prerequisites, data locations, and downloads. |
+| [Distribution implementation plan](distribution-plan.md) | Repository audit, target decisions, release gates, and remaining validation. |
 | [Architecture](architecture.md) | Product boundaries, data flow, and repository layout. |
-| [CI and releases](ci.md) | Browser/Rust checks and manual Companion releases. |
+| [CI and releases](ci.md) | Browser/Rust/Desktop checks and Companion/Desktop release workflows. |
 | [Branding](branding.md) | Runtime name, slogan, logo, and PWA metadata. |
 | [Active roadmap](roadmap.md) | Benchmarks and release readiness. |
 | [Project README](../README.md) | Product overview and quick start. |
 
-The browser platform is the complete default product. The Rust Companion is optional and is selected per extraction job.
+The browser/PWA remains complete when no Companion is installed. Users may pair the browser with the standalone Companion or install the Desktop app; both native modes share the Rust engine and versioned Semantic Document IR.

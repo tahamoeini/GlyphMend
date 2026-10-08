@@ -34,6 +34,8 @@ npm run preview
 
 The production output is `dist/`. Serve it over HTTPS; browsers restrict workers and service workers on `file://` URLs.
 
+The installable Desktop frontend is built separately with `npm run build:desktop`. That build uses the Tauri IPC adapter and omits the PWA service worker; the Tauri host and native runtime packaging are documented in [GlyphMend Desktop](../docs/desktop.md).
+
 ## Optional Companion
 
 The Companion is selected only for a job after a user connects it. It returns Semantic Document IR v2 to this application; the same browser Markdown and DOCX exporters remain in use. If loopback access is denied or the Companion is unavailable, unsupported, or fails, the browser engine processes the job. See the [Companion guide](../docs/companion-engine.md).

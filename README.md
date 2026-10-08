@@ -19,7 +19,13 @@
   </a>
 </p>
 
-An optional Rust Companion can be downloaded and started by the user, then selected for an individual extraction job. It uses PDFium for PDF text, geometry, page objects, and rendering, and Tesseract OCR for English, Russian, Persian, or Simplified Chinese. Both engines exchange the versioned Semantic Document IR v2 and use the same Markdown and DOCX export paths. Browser extraction remains available when the Companion is absent, denied, unsupported, or fails.
+Choose one of three modes:
+
+- **Browser/PWA:** open GlyphMend in a supported browser or install the PWA. Browser extraction, local checkpoints, workspace import/export, Markdown, and DOCX work without the Companion.
+- **Browser + Companion:** run the separate local Companion, pair through its loopback endpoint, and select it for an individual job. The browser remains the interface and fallback.
+- **GlyphMend Desktop:** install the native app and use the bundled interface. Its local PDFium/Tesseract engine is the default; browser extraction remains available for an individual job.
+
+The two native modes exchange the same versioned Semantic Document IR v2 as the browser engine. The standalone Companion uses the versioned loopback API; Desktop calls the same Rust service through Tauri IPC without starting an HTTP listener.
 
 No speed or accuracy advantage is claimed until independently labeled benchmarks support one for a specific document class.
 
@@ -41,6 +47,12 @@ Companion extraction offers Fast OCR by default and High Accuracy OCR as an expl
 
 See [Companion architecture and API](docs/companion-engine.md) and [release requirements](docs/ci.md).
 
+## GlyphMend Desktop
+
+The Desktop release workflow targets Windows x64 (NSIS setup), Ubuntu 24.04 x64 (`.deb`), and macOS Intel and Apple silicon (`.dmg`). It stages unsigned draft prereleases; Windows SmartScreen and macOS Gatekeeper may warn or block launch. Stable public distribution requires code signing and macOS notarization.
+
+The standard Windows installer uses the WebView2 bootstrapper and may need an internet connection to install WebView2 on a machine without its runtime. The alternative offline WebView2 installer adds about 127 MB and is not currently bundled. After installation, GlyphMend's frontend, PDFium, Tesseract, and all supported OCR models are bundled for offline work. The Desktop guide records the package and runtime checks: [GlyphMend Desktop](docs/desktop.md).
+
 ## Product contract
 
 | PDF content | Output |
@@ -56,13 +68,15 @@ The reconstruction policy is conservative: preserve source evidence and expose u
 
 ## Licensing
 
-The browser platform is licensed under AGPL-3.0-or-later; its [license](web-app/LICENSE) and deployed-version source links are available in the app footer. The optional Rust Companion is separately licensed under Apache-2.0 OR MIT.
+The browser interface is licensed under AGPL-3.0-or-later; its [license](web-app/LICENSE) and deployed-version source links are available in the app footer. The Rust crates are separately licensed under Apache-2.0 OR MIT. Desktop bundles include these licenses and target-specific runtime notices.
 
 ## Documentation
 
 - [Browser operations](docs/browser.md)
 - [Browser application](web-app/README.md)
 - [Companion engine and API](docs/companion-engine.md)
+- [GlyphMend Desktop distribution](docs/desktop.md)
+- [Distribution implementation plan and audit decisions](docs/distribution-plan.md)
 - [Architecture and repository layout](docs/architecture.md)
 - [CI and release workflow](docs/ci.md)
 - [Branding](docs/branding.md)

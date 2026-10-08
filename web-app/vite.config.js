@@ -6,28 +6,33 @@ import { viteStaticCopy } from "vite-plugin-static-copy";
 
 const OCR_LANGUAGES = ["eng", "rus", "fas", "chi_sim"];
 
-export default defineConfig({
-  base: "./",
-  worker: { format: "es" },
-  // The extraction worker is created only after the user starts extraction.
-  // Pre-bundle its npm-only dependency up front so Vite does not discover it
-  // lazily and force a full-page reload in the middle of the first extraction.
-  optimizeDeps: { include: ["tesseract.js"] },
-  // Route only the extraction worker's bare `mupdf` import through a small
-  // adapter. The adapter loads MuPDF's browser runtime from raw sibling assets,
-  // keeping it out of Vite's dependency optimizer and preserving Emscripten's
-  // JS/WASM layout.
-  resolve: {
-    alias: [
-      {
-        find: /^mupdf$/,
-        replacement: fileURLToPath(
-          new URL("./src/mupdf-vite.js", import.meta.url),
-        ),
-      },
-    ],
-  },
-  plugins: [
+export default defineConfig(({ mode }) => {
+  const desktopBuild = mode === "desktop";
+  const aliases = [
+    {
+      find: /^mupdf$/,
+      replacement: fileURLToPath(
+        new URL("./src/mupdf-vite.js", import.meta.url),
+      ),
+    },
+  ];
+
+  if (desktopBuild) {
+    aliases.push({
+      find: "@glyphmend/tauri-adapter",
+      replacement: fileURLToPath(
+        new URL("../companion/apps/companion-tauri/web/src/tauri-adapter.js", import.meta.url),
+      ),
+    });
+    aliases.push({
+      find: /^\.\/features\/companion\/bridge\.js$/,
+      replacement: fileURLToPath(
+        new URL("./src/features/companion/desktop-bridge.js", import.meta.url),
+      ),
+    });
+  }
+
+  const plugins = [
     viteStaticCopy({
       targets: [
         { src: "node_modules/pdfjs-dist/wasm/*", dest: "wasm" },
@@ -54,24 +59,62 @@ export default defineConfig({
         })),
       ],
     }),
-    VitePWA({
-      registerType: "autoUpdate",
-      includeAssets: [
-        "icon.svg",
-        "wasm/*",
-        "mupdf/*",
-        "tesseract/*",
-        "tesseract-core/*",
-        "tessdata/*",
-      ],
-      manifest: false,
-      workbox: {
-        // Keep brand identity runtime-configurable after build. The loader stores
-        // the last successful configuration locally for offline use.
-        globIgnores: ["branding.json", "brand/**"],
-        maximumFileSizeToCacheInBytes: 20 * 1024 * 1024,
+    {
+      name: "glyphmend-build-entry",
+      transformIndexHtml: {
+        order: "pre",
+        handler(html) {
+          const entry = desktopBuild ? "desktop-entry.js" : "browser-entry.js";
+          const placeholder = '<script type="module" src="/src/entry.js"></script>';
+          if (!html.includes(placeholder)) {
+            throw new Error("GlyphMend entry point placeholder is missing from index.html.");
+          }
+          return html.replace(placeholder, `<script type="module" src="/src/${entry}"></script>`);
+        },
       },
-    }),
-  ],
-  test: { environment: "jsdom", include: ["src/**/*.test.js"] },
+    },
+  ];
+
+  if (!desktopBuild) {
+    plugins.push(
+      VitePWA({
+        registerType: "autoUpdate",
+        includeAssets: [
+          "icon.svg",
+          "wasm/*",
+          "mupdf/*",
+          "tesseract/*",
+          "tesseract-core/*",
+          "tessdata/*",
+        ],
+        manifest: false,
+        workbox: {
+          // Keep brand identity runtime-configurable after build. The loader stores
+          // the last successful configuration locally for offline use.
+          globIgnores: ["branding.json", "brand/**"],
+          maximumFileSizeToCacheInBytes: 20 * 1024 * 1024,
+        },
+      }),
+    );
+  }
+
+  return {
+    base: "./",
+    worker: { format: "es" },
+    // The extraction worker is created only after the user starts extraction.
+    // Pre-bundle its npm-only dependency up front so Vite does not discover it
+    // lazily and force a full-page reload in the middle of the first extraction.
+    optimizeDeps: { include: ["tesseract.js"] },
+    resolve: { alias: aliases },
+    plugins,
+    build: desktopBuild
+      ? {
+          outDir: fileURLToPath(
+            new URL("../companion/apps/companion-tauri/web/dist", import.meta.url),
+          ),
+          emptyOutDir: true,
+        }
+      : undefined,
+    test: { environment: "jsdom", include: ["src/**/*.test.js"] },
+  };
 });
