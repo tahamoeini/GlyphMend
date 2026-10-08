@@ -138,11 +138,17 @@ const generatedNoticePaths = [
   "LICENSES.txt",
 ];
 if (unexpected.length || generatedNoticePaths.some((name) => existsSync(path.join(runtimeDir, "notices", name)))) {
-  throw new Error(`Refusing to overwrite existing desktop runtime data: ${runtimeDir}`);
+  throw new Error(
+    `Refusing to overwrite existing desktop runtime data: ${runtimeDir}. `
+    + "If these are stale generated resources, run `npm run clean:runtime` before preparing this OS target.",
+  );
 }
 for (const name of ["pdfium", "tessdata", "lib", "runtime-source-manifest.json", "runtime-manifest.json"]) {
   if (existsSync(path.join(runtimeDir, name))) {
-    throw new Error(`Refusing to overwrite existing desktop runtime data: ${path.join(runtimeDir, name)}`);
+    throw new Error(
+      `Refusing to overwrite existing desktop runtime data: ${path.join(runtimeDir, name)}. `
+      + "If these are stale generated resources, run `npm run clean:runtime` before preparing this OS target.",
+    );
   }
 }
 
@@ -178,6 +184,10 @@ try {
         cpSync(path.join(extractDir, entry.name), path.join(licenseDir, entry.name), { recursive: true });
       }
     }
+  }
+  const pdfiumLicense = path.join(extractDir, "LICENSE");
+  if (existsSync(pdfiumLicense)) {
+    copyFileSync(pdfiumLicense, path.join(noticesDir, "pdfium", "LICENSE"));
   }
   const pdfiumNoticeFiles = findFile(noticesDir, "LICENSE");
   if (!pdfiumNoticeFiles) throw new Error("The pinned PDFium archive did not provide license texts.");

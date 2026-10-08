@@ -14,7 +14,7 @@
       "data": "$DATA/GlyphMend",
       "localData": "$LOCALDATA/GlyphMend",
       "cache": "$CACHE/GlyphMend",
-      "log": "$LOG/GlyphMend"
+      "log": "$LOCALDATA/GlyphMend/logs"
     },
     "withGlobalTauri": true,
     "windows": [

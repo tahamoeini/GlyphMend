@@ -65,7 +65,7 @@ async fn companion_append_chunk(
 ) -> Result<(), String> {
     let id = parse_job_id(&job_id)?;
     let complete = append_chunk_part(
-        &mut runtime.pending_chunks.lock().await,
+        &mut *runtime.pending_chunks.lock().await,
         id,
         sequence,
         part_index,

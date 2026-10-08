@@ -54,7 +54,7 @@ The app process exposes only the bounded registered job commands. The frontend h
 
 ## Local development
 
-Install the host's Tauri/WebView prerequisites and Tesseract/Leptonica development libraries first. Then install the Node dependencies and build the Desktop frontend:
+Use Node.js 22 and the Rust toolchain pinned in `companion/rust-toolchain.toml`. Install the host's Tauri/WebView prerequisites and Tesseract/Leptonica development libraries first. Keep a separate checkout for each development OS: Tauri's CLI binary in `node_modules` and the contents of `resources/runtime` are OS-specific, so a Windows checkout cannot be shared with WSL. The Tauri CLI install explicitly includes npm optional dependencies:
 
 ```bash
 cd web-app
@@ -62,13 +62,13 @@ npm ci
 npm run build:desktop
 
 cd ../companion/apps/companion-tauri/web
-npm ci
+npm ci --include=optional
 npm run icon
 npm run prepare:runtime
 npm run tauri -- dev
 ```
 
-The runtime preparation downloads the pinned PDFium library and OCR model files; it does not run during normal browser builds. Windows packaging CI uses statically linked vcpkg libraries. Linux and macOS package assembly is performed by the native release workflow so it can inspect and relocate the target libraries with the appropriate tools.
+The runtime preparation downloads the pinned PDFium library and OCR model files; it does not run during normal browser builds. If reusing a checkout that already has runtime files from another OS or an interrupted preparation, run `npm run clean:runtime` before `npm run prepare:runtime`. The cleaner removes only recognized generated runtime entries and refuses to remove unknown files. Windows packaging CI uses statically linked vcpkg libraries. Linux and macOS package assembly is performed by the native release workflow so it can inspect and relocate the target libraries with the appropriate tools.
 
 ## Release process
 

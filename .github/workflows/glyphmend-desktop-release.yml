@@ -105,7 +105,7 @@ jobs:
         run: npm ci
         working-directory: web-app
       - name: Install Tauri CLI
-        run: npm ci
+        run: npm ci --include=optional
         working-directory: companion/apps/companion-tauri/web
       - name: Check browser dependency licenses
         run: npm run license:check

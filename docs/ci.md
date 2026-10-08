@@ -48,7 +48,7 @@ These commands match the Companion workflow's native-crate boundary. The Tauri c
 
 ## Desktop development and CI
 
-The Desktop CI workflow builds both web adapters, checks the IPC adapter, runs Rust checks, and builds the native host on Windows x64, Ubuntu 24.04 x64, macOS Intel, and Apple silicon. It does not create installers.
+The Desktop CI workflow builds both web adapters, checks the IPC adapter, runs Rust checks, and builds the native host on Windows x64, Ubuntu 24.04 x64, macOS Intel, and Apple silicon. Each native runner uses Node.js 22 and installs the Tauri CLI with optional platform dependencies. It does not create installers.
 
 For local setup, install the target OS's Tauri/WebView and Tesseract/Leptonica development prerequisites, then follow the [Desktop guide](desktop.md). Its resource-preparation command downloads the pinned PDFium runtime and OCR models; normal browser builds do not need those files.
 

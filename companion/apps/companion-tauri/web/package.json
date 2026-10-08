@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "icon": "node run-tauri.mjs icon ../../../../web-app/public/brand/glyphmend-mark.svg",
+    "clean:runtime": "node ../src-tauri/scripts/clean-runtime.mjs",
     "prepare:runtime": "node ../src-tauri/scripts/prepare-runtime.mjs",
     "verify:runtime": "node ../src-tauri/scripts/validate-runtime.mjs",
     "tauri": "node run-tauri.mjs"
