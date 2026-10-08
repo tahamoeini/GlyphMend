@@ -18,3 +18,8 @@ tauri = { version = "2.11.6", default-features = false, features = ["wry"] }
 tokio.workspace = true
 tokio-util.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+bytes.workspace = true
+serde_json.workspace = true
+sha2.workspace = true

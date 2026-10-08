@@ -198,75 +198,8 @@ export class LoopbackCompanionBridge {
     if (response.status !== 204) await responseJson(response);
   }
 
-  async extractDocument({
-    bytes,
-    pageCount,
-    selectedPages,
-    ocrAccuracy = "fast",
-    ocrLanguage = "eng",
-    extractEquations = true,
-    useOcr = true,
-    forceOcr = false,
-    password,
-    onJobCreated = () => {},
-    onProgress = () => {},
-    signal,
-  } = {}) {
-    const input = await asBytes(bytes);
-    if (input.byteLength === 0 || input.byteLength > COMPANION_LIMITS.documentBytes) {
-      throw Object.assign(new Error("PDF size is outside the Companion limit."), { code: "payload-too-large" });
-    }
-    const metadata = {
-      schema: DOCUMENT_OPTIONS_SCHEMA,
-      selectedPages,
-      ocrAccuracy,
-      ...(ocrLanguage !== "eng" ? { ocrLanguage } : {}),
-      ...(this.session?.protocolVersion?.minor >= 4 ? { extractEquations } : {}),
-      useOcr,
-      forceOcr,
-      ...(password ? { password } : {}),
-    };
-    const job = await this.createJob({
-      documentName: "document.pdf",
-      capabilityId: DOCUMENT_EXTRACTION_CAPABILITY,
-      inputKind: "document",
-      declaredBytes: input.byteLength,
-      pageCount,
-      metadata,
-    }, { signal });
-    onJobCreated(job.jobId);
-    let subscription;
-    try {
-      subscription = this.subscribe(job.jobId, onProgress, { signal });
-      // The progress poll can fail while input is still uploading. Attach a
-      // handler immediately so its rejection is observed before the later await.
-      subscription.done.catch(() => undefined);
-      for (let offset = 0, sequence = 0; offset < input.byteLength; offset += COMPANION_LIMITS.chunkBytes, sequence += 1) {
-        if (signal?.aborted) throw abortError();
-        const end = Math.min(offset + COMPANION_LIMITS.chunkBytes, input.byteLength);
-        await this.appendChunk(job.jobId, sequence, input.subarray(offset, end), { signal });
-      }
-      await this.completeInput(job.jobId, {
-        sha256Hex: await sha256Hex(input),
-        totalBytes: input.byteLength,
-      }, { signal });
-      await subscription.done;
-      if (signal?.aborted) throw abortError();
-      const response = await this.getResult(job.jobId, { signal });
-      if (!response.terminal || response.status !== "completed" || !response.result) {
-        throw new Error("Companion extraction did not complete successfully.");
-      }
-      return validateSemanticDocumentIR(response.result);
-    } catch (error) {
-      if (signal?.aborted || error?.name === "AbortError") {
-        await this.cancel(job.jobId).catch(() => undefined);
-        throw abortError();
-      }
-      await this.cancel(job.jobId).catch(() => undefined);
-      throw error;
-    } finally {
-      subscription?.stop();
-    }
+  async extractDocument(options = {}) {
+    return extractDocumentWithBridge(this, options);
   }
 
   subscribe(jobId, onEvent, { signal, waitMs = COMPANION_LIMITS.eventWaitMs } = {}) {
@@ -336,6 +269,77 @@ export class LoopbackCompanionBridge {
   async disconnect() {
     this.endpoint = null;
     this.session = null;
+  }
+}
+
+export async function extractDocumentWithBridge(bridge, {
+  bytes,
+  pageCount,
+  selectedPages,
+  ocrAccuracy = "fast",
+  ocrLanguage = "eng",
+  extractEquations = true,
+  useOcr = true,
+  forceOcr = false,
+  password,
+  onJobCreated = () => {},
+  onProgress = () => {},
+  signal,
+} = {}) {
+  const input = await asBytes(bytes);
+  if (input.byteLength === 0 || input.byteLength > COMPANION_LIMITS.documentBytes) {
+    throw Object.assign(new Error("PDF size is outside the Companion limit."), { code: "payload-too-large" });
+  }
+  const metadata = {
+    schema: DOCUMENT_OPTIONS_SCHEMA,
+    selectedPages,
+    ocrAccuracy,
+    ...(ocrLanguage !== "eng" ? { ocrLanguage } : {}),
+    ...(bridge.session?.protocolVersion?.minor >= 4 ? { extractEquations } : {}),
+    useOcr,
+    forceOcr,
+    ...(password ? { password } : {}),
+  };
+  const job = await bridge.createJob({
+    documentName: "document.pdf",
+    capabilityId: DOCUMENT_EXTRACTION_CAPABILITY,
+    inputKind: "document",
+    declaredBytes: input.byteLength,
+    pageCount,
+    metadata,
+  }, { signal });
+  onJobCreated(job.jobId);
+  let subscription;
+  try {
+    subscription = bridge.subscribe(job.jobId, onProgress, { signal });
+    // The progress poll can fail while input is still uploading. Attach a
+    // handler immediately so its rejection is observed before the later await.
+    subscription.done.catch(() => undefined);
+    for (let offset = 0, sequence = 0; offset < input.byteLength; offset += COMPANION_LIMITS.chunkBytes, sequence += 1) {
+      if (signal?.aborted) throw abortError();
+      const end = Math.min(offset + COMPANION_LIMITS.chunkBytes, input.byteLength);
+      await bridge.appendChunk(job.jobId, sequence, input.subarray(offset, end), { signal });
+    }
+    await bridge.completeInput(job.jobId, {
+      sha256Hex: await sha256Hex(input),
+      totalBytes: input.byteLength,
+    }, { signal });
+    await subscription.done;
+    if (signal?.aborted) throw abortError();
+    const response = await bridge.getResult(job.jobId, { signal });
+    if (!response.terminal || response.status !== "completed" || !response.result) {
+      throw new Error("Companion extraction did not complete successfully.");
+    }
+    return validateSemanticDocumentIR(response.result);
+  } catch (error) {
+    if (signal?.aborted || error?.name === "AbortError") {
+      await bridge.cancel(job.jobId).catch(() => undefined);
+      throw abortError();
+    }
+    await bridge.cancel(job.jobId).catch(() => undefined);
+    throw error;
+  } finally {
+    subscription?.stop();
   }
 }
 

@@ -1,0 +1,403 @@
+import { createHash } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repositoryRoot = path.resolve(scriptDir, "../../../../..");
+const runtimeDir = path.resolve(scriptDir, "../resources/runtime");
+const runtimeLibDir = path.join(runtimeDir, "lib");
+const sourceManifestPath = path.join(runtimeDir, "runtime-source-manifest.json");
+const spdxTextCache = new Map();
+
+function run(command, args, { allowFailure = false, encoding = "utf8" } = {}) {
+  const result = spawnSync(command, args, { encoding, maxBuffer: 64 * 1024 * 1024 });
+  if (result.error) throw result.error;
+  if (result.status !== 0 && !allowFailure) {
+    throw new Error(`${command} ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
+  }
+  return { output: String(result.stdout || "").trim(), status: result.status };
+}
+
+function walkFiles(root) {
+  const files = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) files.push(...walkFiles(fullPath));
+    else if (entry.isFile()) files.push(fullPath);
+  }
+  return files;
+}
+
+function lddPaths(file) {
+  const { output, status } = run("ldd", [file], { allowFailure: true });
+  if (status !== 0 || output.includes("not found")) {
+    throw new Error(`Could not resolve native runtime dependencies for ${file}: ${output}`);
+  }
+  return output.split(/\r?\n/).flatMap((line) => {
+    const direct = line.match(/=>\s*(\/\S+)/);
+    const loader = line.match(/^\s*(\/\S+)\s+\(/);
+    return direct ? [direct[1]] : loader ? [loader[1]] : [];
+  });
+}
+
+function isLinuxSystemLibrary(file) {
+  return /^(?:linux-vdso|ld-linux|libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|libgcc_s\.so|libstdc\+\+\.so)/.test(path.basename(file));
+}
+
+function copyUniqueLibrary(source, destinationRoot) {
+  const sourceName = path.basename(source);
+  const sourcePath = realpathSync(source);
+  const actualName = path.basename(sourcePath);
+  const destination = path.join(destinationRoot, actualName);
+  if (existsSync(destination)) {
+    const oldHash = createHash("sha256").update(readFileSync(destination)).digest("hex");
+    const newHash = createHash("sha256").update(readFileSync(sourcePath)).digest("hex");
+    if (oldHash !== newHash) {
+      throw new Error(`Native dependency name collision: ${sourcePath} and ${destination}`);
+    }
+  } else {
+    copyFileSync(sourcePath, destination);
+  }
+  if (sourceName !== actualName) {
+    const alias = path.join(destinationRoot, sourceName);
+    if (existsSync(alias)) {
+      const oldHash = createHash("sha256").update(readFileSync(alias)).digest("hex");
+      const newHash = createHash("sha256").update(readFileSync(sourcePath)).digest("hex");
+      if (oldHash !== newHash) throw new Error(`Native dependency alias collision: ${sourceName}`);
+    } else {
+      copyFileSync(sourcePath, alias);
+    }
+    return alias;
+  }
+  return destination;
+}
+
+function collectLinuxLibraries(seedFiles) {
+  const queue = [];
+  const bundledSources = new Set();
+  for (const seed of seedFiles) {
+    const source = seed;
+    const resolvedSource = realpathSync(source);
+    if (resolvedSource === runtimeDir || resolvedSource.startsWith(`${runtimeDir}${path.sep}`)) {
+      queue.push(resolvedSource);
+    } else {
+      bundledSources.add(resolvedSource);
+      queue.push(copyUniqueLibrary(source, runtimeLibDir));
+    }
+  }
+  const visited = new Set();
+  while (queue.length) {
+    const current = realpathSync(queue.pop());
+    if (visited.has(current)) continue;
+    visited.add(current);
+    for (const dependency of lddPaths(current)) {
+      if (isLinuxSystemLibrary(dependency)) continue;
+      bundledSources.add(realpathSync(dependency));
+      const copied = copyUniqueLibrary(dependency, runtimeLibDir);
+      queue.push(copied);
+    }
+  }
+  const executable = path.resolve(repositoryRoot, "companion/target", target, "release", "companion-tauri");
+  run("patchelf", ["--set-rpath", "$ORIGIN/../lib/glyphmend/runtime/lib", executable]);
+  const pdfium = path.join(runtimeDir, "pdfium", "libpdfium.so");
+  run("patchelf", ["--set-rpath", "$ORIGIN/../lib", pdfium]);
+  for (const file of walkFiles(runtimeLibDir)) {
+    if (/\.so(?:\.|$)/.test(file)) run("patchelf", ["--set-rpath", "$ORIGIN", file]);
+  }
+  writeLinuxNotices([...bundledSources]);
+}
+
+function writeLinuxNotices(files) {
+  const noticesDir = path.join(runtimeDir, "notices/native/linux");
+  mkdirSync(noticesDir, { recursive: true });
+  const packages = new Map();
+  for (const file of files) {
+    const ownership = run("dpkg-query", ["-S", file], { allowFailure: true }).output;
+    const packageName = ownership.match(/^([^:,]+):/)?.[1];
+    if (packageName) packages.set(packageName, true);
+  }
+  const records = [];
+  for (const packageName of [...packages.keys()].sort()) {
+    const copyrightPath = `/usr/share/doc/${packageName}/copyright`;
+    if (!existsSync(copyrightPath)) {
+      throw new Error(`Missing Debian copyright notice for bundled runtime package ${packageName}`);
+    }
+    copyFileSync(copyrightPath, path.join(noticesDir, `${packageName}.copyright`));
+    records.push({ package: packageName, version: run("dpkg-query", ["-W", "-f=${Version}", packageName]).output });
+  }
+  writeFileSync(path.join(noticesDir, "packages.json"), `${JSON.stringify(records, null, 2)}\n`);
+}
+
+function otoolDependencies(file) {
+  const output = run("otool", ["-L", file]).output;
+  return output.split(/\r?\n/).slice(1).flatMap((line) => {
+    const match = line.trim().match(/^(.+?)\s+\(compatibility version/);
+    return match ? [match[1]] : [];
+  });
+}
+
+function versionParts(value) {
+  return value.split(".").map((part) => Number(part));
+}
+
+function validateMacDeploymentTarget(files) {
+  const configPath = path.join(scriptDir, "..", "tauri.conf.json");
+  const configured = JSON.parse(readFileSync(configPath, "utf8")).bundle?.macOS?.minimumSystemVersion;
+  if (!configured) throw new Error("Tauri macOS minimumSystemVersion is not configured.");
+  const configuredParts = versionParts(configured);
+  for (const file of files) {
+    const loadCommands = run("otool", ["-l", file]).output;
+    const minimums = [...loadCommands.matchAll(/\bminos\s+(\d+(?:\.\d+){1,2})/g)].map((match) => match[1]);
+    if (!minimums.length) {
+      throw new Error(`Could not determine the minimum macOS version from load commands in ${file}.`);
+    }
+    for (const minimum of minimums) {
+      const parts = versionParts(minimum);
+      const length = Math.max(parts.length, configuredParts.length);
+      for (let index = 0; index < length; index += 1) {
+        const actual = parts[index] || 0;
+        const allowed = configuredParts[index] || 0;
+        if (actual > allowed) {
+          throw new Error(`${file} requires macOS ${minimum}, above the configured ${configured} minimum.`);
+        }
+        if (actual < allowed) break;
+      }
+    }
+  }
+}
+
+async function spdxText(id, exception = false) {
+  const cacheKey = `${exception ? "exception:" : "license:"}${id}`;
+  if (spdxTextCache.has(cacheKey)) return spdxTextCache.get(cacheKey);
+  const resourcePath = exception ? `exceptions/${encodeURIComponent(id)}` : encodeURIComponent(id);
+  const response = await fetch(`https://spdx.org/licenses/${resourcePath}.txt`);
+  if (!response.ok) throw new Error(`SPDX ${exception ? "exception " : "license "}text ${id} is unavailable (${response.status}).`);
+  const text = await response.text();
+  if (!text.trim()) throw new Error(`SPDX text ${id} is empty.`);
+  spdxTextCache.set(cacheKey, text);
+  return text;
+}
+
+async function collectMacLibraries(executable) {
+  const packages = new Set(["tesseract", "leptonica"]);
+  for (const dependency of run("brew", ["deps", "--installed", "tesseract", "leptonica"]).output.split(/\r?\n/)) {
+    if (dependency.trim()) packages.add(dependency.trim());
+  }
+
+  const candidates = new Set();
+  for (const packageName of packages) {
+    const output = run("brew", ["list", "--verbose", packageName]).output;
+    for (const file of output.split(/\r?\n/)) {
+      if (/\.dylib$/i.test(file) && existsSync(file)) candidates.add(file);
+    }
+  }
+  if (!candidates.size) throw new Error("Homebrew did not expose any Tesseract or Leptonica runtime libraries.");
+  mkdirSync(runtimeLibDir, { recursive: true });
+  const copied = new Map();
+  for (const source of candidates) {
+    const destination = copyUniqueLibrary(source, runtimeLibDir);
+    copied.set(path.basename(source), destination);
+    copied.set(path.basename(realpathSync(source)), path.join(runtimeLibDir, path.basename(realpathSync(source))));
+  }
+
+  const pdfium = path.join(runtimeDir, "pdfium", "libpdfium.dylib");
+  const filesToPatch = [executable, pdfium, ...new Set(walkFiles(runtimeLibDir))];
+  for (const file of filesToPatch) {
+    for (const dependency of otoolDependencies(file)) {
+      if (dependency.startsWith("/System/") || dependency.startsWith("/usr/lib/")) continue;
+      if (!copied.has(path.basename(dependency))) {
+        const packageLib = [...candidates].find((candidate) => path.basename(candidate) === path.basename(dependency));
+        if (!packageLib) throw new Error(`macOS runtime dependency is not bundled: ${dependency} (required by ${file}).`);
+        copied.set(path.basename(dependency), copyUniqueLibrary(packageLib, runtimeLibDir));
+      }
+      if (dependency !== `@rpath/${path.basename(dependency)}`) {
+        run("install_name_tool", ["-change", dependency, `@rpath/${path.basename(dependency)}`, file]);
+      }
+    }
+    if (file !== executable && file !== pdfium) {
+      const name = path.basename(file);
+      run("install_name_tool", ["-id", `@rpath/${name}`, file]);
+      addRpath(file, "@loader_path");
+    }
+  }
+  addRpath(executable, "@executable_path/../Resources/runtime/lib");
+  addRpath(pdfium, "@loader_path/../lib");
+  validateMacDeploymentTarget(filesToPatch);
+  await writeMacNotices(packages);
+}
+
+function addRpath(file, rpath) {
+  const loadCommands = run("otool", ["-l", file]).output;
+  if (loadCommands.includes(`path ${rpath} (`)) return;
+  run("install_name_tool", ["-add_rpath", rpath, file]);
+}
+
+async function writeMacNotices(packages) {
+  const noticesDir = path.join(runtimeDir, "notices/native/macos");
+  mkdirSync(noticesDir, { recursive: true });
+  const metadata = JSON.parse(run("brew", ["info", "--json=v2", "--installed"]).output);
+  const formulae = new Map((metadata.formulae || []).map((item) => [item.name, item]));
+  const records = [];
+  for (const packageName of [...packages].sort()) {
+    const formula = formulae.get(packageName);
+    if (!formula) throw new Error(`Homebrew omitted license metadata for ${packageName}`);
+    const files = run("brew", ["list", "--verbose", packageName]).output.split(/\r?\n/);
+    const noticeFiles = files.filter((file) => existsSync(file)
+      && statSync(file).isFile()
+      && /(?:^|\/)(?:LICENSE|COPYING|NOTICE|COPYRIGHT)(?:[._-].*)?$/i.test(file));
+    const packageNotices = path.join(noticesDir, packageName);
+    const formulaPrefix = realpathSync(run("brew", ["--prefix", packageName]).output);
+    mkdirSync(packageNotices, { recursive: true });
+    for (const file of noticeFiles) {
+      const relative = path.relative(formulaPrefix, realpathSync(file));
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new Error(`Homebrew notice file is outside the ${packageName} formula directory: ${file}`);
+      }
+      const destination = path.join(packageNotices, relative);
+      mkdirSync(path.dirname(destination), { recursive: true });
+      copyFileSync(file, destination);
+    }
+    const license = formula.license || "";
+    const withoutExceptions = license.replace(/\bWITH\s+[A-Za-z0-9][A-Za-z0-9.+-]*/gi, "");
+    const ids = [...new Set(withoutExceptions.match(/[A-Za-z0-9][A-Za-z0-9.+-]*/g) || [])]
+      .filter((id) => !["AND", "OR", "WITH"].includes(id.toUpperCase()) && !id.startsWith("LicenseRef-"));
+    const exceptions = [...new Set([...license.matchAll(/\bWITH\s+([A-Za-z0-9][A-Za-z0-9.+-]*)/g)].map((match) => match[1]))];
+    if (!noticeFiles.length && !ids.length) {
+      throw new Error(`Homebrew formula ${packageName} has no full license file or usable SPDX license expression.`);
+    }
+    for (const id of ids) {
+      writeFileSync(path.join(packageNotices, `SPDX-${id}.txt`), await spdxText(id));
+    }
+    for (const id of exceptions) {
+      writeFileSync(path.join(packageNotices, `SPDX-exception-${id}.txt`), await spdxText(id, true));
+    }
+    writeFileSync(path.join(packageNotices, "PACKAGE.txt"), `${packageName}@${formula.versions?.stable || "unknown"}\nLicense: ${license || "UNSPECIFIED"}\nHomepage: ${formula.homepage || ""}\n`);
+    records.push({
+      name: packageName,
+      version: formula.versions?.stable,
+      license: license || "not-declared",
+      noticeFiles: noticeFiles.map((file) => path.relative(formulaPrefix, realpathSync(file)).split(path.sep).join("/")),
+    });
+  }
+  writeFileSync(path.join(noticesDir, "homebrew-formula-licenses.json"), `${JSON.stringify(records, null, 2)}\n`);
+}
+
+function writeWindowsNotices() {
+  const root = process.env.VCPKG_INSTALLATION_ROOT;
+  const triplet = process.env.VCPKG_TRIPLET || "x64-windows-static-md";
+  if (!root) throw new Error("VCPKG_INSTALLATION_ROOT is required for the Windows static runtime build.");
+  const installed = path.join(root, "installed", triplet);
+  const noticesDir = path.join(runtimeDir, "notices/native/windows");
+  mkdirSync(noticesDir, { recursive: true });
+  const share = path.join(installed, "share");
+  if (!existsSync(share)) throw new Error(`vcpkg package metadata is missing: ${share}`);
+  const records = [];
+  for (const packageName of readdirSync(share)) {
+    const packageDir = path.join(share, packageName);
+    if (!statSync(packageDir).isDirectory()) continue;
+    const copyrightPath = path.join(packageDir, "copyright");
+    if (!existsSync(copyrightPath)) {
+      throw new Error(`Missing vcpkg copyright notice for installed package ${packageName}`);
+    }
+    const destination = path.join(noticesDir, `${packageName}.copyright`);
+    copyFileSync(copyrightPath, destination);
+    records.push({ package: packageName, notice: path.basename(destination) });
+  }
+  if (!records.some(({ package: name }) => name.startsWith("tesseract"))) {
+    throw new Error("The Windows bundle is missing the vcpkg Tesseract license notice.");
+  }
+  const listed = run("vcpkg", ["list", "--triplet", triplet], { allowFailure: true }).output;
+  writeFileSync(path.join(noticesDir, "vcpkg-packages.txt"), `${listed}\n`);
+}
+
+function collectRuntimeFiles() {
+  return walkFiles(runtimeDir)
+    .filter((file) => path.basename(file) !== ".gitkeep" && path.basename(file) !== "runtime-manifest.json")
+    .map((file) => {
+      const bytes = readFileSync(file);
+      return {
+        path: path.relative(runtimeDir, file).split(path.sep).join("/"),
+        bytes: bytes.length,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      };
+    })
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function combineLicenses() {
+  const noticesDir = path.join(runtimeDir, "notices");
+  const licenseFiles = walkFiles(noticesDir)
+    .filter((file) => {
+      const relative = path.relative(noticesDir, file).split(path.sep).join("/");
+      return (relative.startsWith("pdfium/")
+        || /(?:license|copying|notice|\.copyright$)/i.test(path.basename(file))
+        || path.basename(file).startsWith("SPDX-"))
+        && path.basename(file) !== "LICENSES.txt";
+    })
+    .sort();
+  const sections = [
+    "GlyphMend Desktop and bundled runtime license notices",
+    "======================================================",
+    "",
+  ];
+  for (const file of licenseFiles) {
+    sections.push(`--- ${path.relative(noticesDir, file).split(path.sep).join("/")} ---`, readFileSync(file, "utf8"), "");
+  }
+  writeFileSync(path.join(noticesDir, "LICENSES.txt"), sections.join("\n"));
+}
+
+function writeManifest(sourceManifest, files, nativeLibraries) {
+  const manifest = {
+    ...sourceManifest,
+    runtimeLibraries: nativeLibraries,
+    totalBytes: files.reduce((total, file) => total + file.bytes, 0),
+    files,
+  };
+  writeFileSync(path.join(runtimeDir, "runtime-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+const sourceManifest = JSON.parse(readFileSync(sourceManifestPath, "utf8"));
+const target = process.env.TARGET || sourceManifest.target;
+if (target !== sourceManifest.target) {
+  throw new Error(`Prepared runtime target ${sourceManifest.target} does not match build target ${target}.`);
+}
+const pdfiumPath = path.join(runtimeDir, "pdfium", sourceManifest.pdfium.file);
+if (!existsSync(pdfiumPath)) throw new Error(`Prepared PDFium library is missing: ${pdfiumPath}`);
+if (!sourceManifest.tessdata?.commits?.fast || !sourceManifest.tessdata?.commits?.best) {
+  throw new Error("Prepared OCR model provenance is missing.");
+}
+
+const binarySuffix = target.includes("windows") ? ".exe" : "";
+const executable = path.resolve(repositoryRoot, "companion/target", target, "release", `companion-tauri${binarySuffix}`);
+if (!existsSync(executable)) throw new Error(`Built Tauri executable is missing: ${executable}`);
+
+const nativeLibraries = [];
+if (target.includes("linux")) {
+  mkdirSync(runtimeLibDir, { recursive: true });
+  const direct = lddPaths(executable).filter((file) => /lib(?:tesseract|lept)[^/]*\.so/.test(path.basename(file)));
+  if (!direct.some((file) => /tesseract/i.test(path.basename(file))) || !direct.some((file) => /lept/i.test(path.basename(file)))) {
+    throw new Error("Linux Tesseract and Leptonica shared libraries are not linked into the Desktop host.");
+  }
+  collectLinuxLibraries([...direct, pdfiumPath]);
+  nativeLibraries.push(...walkFiles(runtimeLibDir).map((file) => path.relative(runtimeDir, file).split(path.sep).join("/")));
+} else if (target.includes("apple-darwin")) {
+  await collectMacLibraries(executable);
+  nativeLibraries.push(...walkFiles(runtimeLibDir).map((file) => path.relative(runtimeDir, file).split(path.sep).join("/")));
+} else {
+  writeWindowsNotices();
+}
+
+combineLicenses();
+writeManifest(sourceManifest, collectRuntimeFiles(), nativeLibraries);
+console.log(`Assembled and fingerprinted GlyphMend Desktop runtime resources for ${target}.`);

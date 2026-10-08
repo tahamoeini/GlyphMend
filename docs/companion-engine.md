@@ -2,6 +2,8 @@
 
 The Rust Companion is an optional local PDF extraction engine. Users download and start it, connect from the browser, and select it for an individual job. The browser engine remains the default and is available without a Companion.
 
+GlyphMend Desktop is a separate distribution that reuses this Rust service and provider through bounded Tauri IPC in the app process. It does not start the Companion's loopback HTTP server. Desktop defaults to its bundled engine, while browser extraction remains selectable per job. The standalone CLI/loopback Companion remains independently usable. See the [Desktop guide](desktop.md).
+
 The Companion uses PDFium for native PDF text, page geometry, page objects, and rendering. Tesseract OCR supports English, Russian, Persian, Simplified Chinese, and a bundled English/Persian pair for mixed scans. Select the OCR language in the browser; the Companion offers Fast (default) and High Accuracy model sets. The paired model can take longer and use more memory than a single language. The Tesseract project documents the speed/accuracy tradeoff between model sets in its [data-file guide](https://github.com/tesseract-ocr/tessdoc/blob/main/Data-Files.md).
 
 ## User initiated loopback connection

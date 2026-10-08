@@ -21,7 +21,7 @@ use std::{
     sync::{
         atomic::{AtomicU32, Ordering},
         mpsc::{self, sync_channel},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     thread,
 };
@@ -39,8 +39,38 @@ const MAX_RENDER_DIMENSION: f64 = 4096.0;
 const OCR_DPI: f64 = 300.0;
 const MIN_NATIVE_TEXT_CHARS: usize = 24;
 
-#[derive(Debug, Default)]
-pub struct PdfiumTesseractProvider;
+#[derive(Default)]
+pub struct PdfiumTesseractProvider {
+    runtime_paths: Option<RuntimeResourcePaths>,
+    pdfium_binding: OnceLock<std::result::Result<Pdfium, String>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeResourcePaths {
+    pub pdfium_dir: PathBuf,
+    pub tessdata_root: PathBuf,
+}
+
+impl PdfiumTesseractProvider {
+    pub fn with_runtime_paths(pdfium_dir: PathBuf, tessdata_root: PathBuf) -> Self {
+        Self {
+            runtime_paths: Some(RuntimeResourcePaths {
+                pdfium_dir,
+                tessdata_root,
+            }),
+            pdfium_binding: OnceLock::new(),
+        }
+    }
+
+    fn bind_pdfium(&self) -> Result<&Pdfium> {
+        match self.pdfium_binding.get_or_init(|| {
+            bind_pdfium_library(self.runtime_paths.as_ref()).map_err(|error| format!("{error:#}"))
+        }) {
+            Ok(pdfium) => Ok(pdfium),
+            Err(error) => Err(anyhow!(error.clone())),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 struct TextSegment {
@@ -79,7 +109,7 @@ impl CapabilityProvider for PdfiumTesseractProvider {
             provider_kind: ProviderKind::Deterministic,
             input_schema: companion_contract::DOCUMENT_INPUT_SCHEMA.into(),
             output_schema: IR_SCHEMA_ID.into(),
-            execution_locations: vec!["companion".into()],
+            execution_locations: vec!["companion".into(), "tauri".into()],
             deterministic: true,
             requires_model: true,
             confidence_calibrated: false,
@@ -95,12 +125,13 @@ impl CapabilityProvider for PdfiumTesseractProvider {
         cancellation: CancellationToken,
         progress: ProgressSender,
     ) -> std::result::Result<ProviderOutput, CoreError> {
-        extract_document(input, cancellation, progress)
+        extract_document(self, input, cancellation, progress)
             .map_err(|error| CoreError::Provider(error.to_string()))
     }
 }
 
 fn extract_document(
+    provider: &PdfiumTesseractProvider,
     input: ProviderInput,
     cancellation: CancellationToken,
     progress: ProgressSender,
@@ -126,7 +157,7 @@ fn extract_document(
         return Err(anyhow!("uploaded bytes are not a PDF"));
     }
 
-    let pdfium = bind_pdfium()?;
+    let pdfium = provider.bind_pdfium()?;
     let document = pdfium
         .load_pdf_from_file(&input.input_path, options.password.as_deref())
         .context("PDFium could not open the uploaded PDF")?;
@@ -141,6 +172,10 @@ fn extract_document(
         Some(resolve_tessdata(
             &options.ocr_accuracy,
             &options.ocr_language,
+            provider
+                .runtime_paths
+                .as_ref()
+                .map(|paths| paths.tessdata_root.as_path()),
         )?)
     } else {
         None
@@ -438,18 +473,14 @@ fn extract_document(
     })
 }
 
-static PDFIUM_BINDING: std::sync::OnceLock<std::result::Result<Pdfium, String>> =
-    std::sync::OnceLock::new();
-
-fn bind_pdfium() -> Result<&'static Pdfium> {
-    match PDFIUM_BINDING.get_or_init(|| bind_pdfium_library().map_err(|error| format!("{error:#}")))
-    {
-        Ok(pdfium) => Ok(pdfium),
-        Err(error) => Err(anyhow!(error.clone())),
+fn bind_pdfium_library(runtime_paths: Option<&RuntimeResourcePaths>) -> Result<Pdfium> {
+    if let Some(paths) = runtime_paths {
+        let library_path = Pdfium::pdfium_platform_library_name_at_path(&paths.pdfium_dir);
+        let library = Pdfium::bind_to_library(library_path)
+            .context("bundled PDFium runtime is missing from the Tauri resources")?;
+        return Ok(Pdfium::new(library));
     }
-}
 
-fn bind_pdfium_library() -> Result<Pdfium> {
     let executable_dir = std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf))
@@ -462,13 +493,18 @@ fn bind_pdfium_library() -> Result<Pdfium> {
     Ok(Pdfium::new(library))
 }
 
-fn resolve_tessdata(accuracy: &companion_contract::OcrAccuracy, language: &str) -> Result<PathBuf> {
+fn resolve_tessdata(
+    accuracy: &companion_contract::OcrAccuracy,
+    language: &str,
+    resource_tessdata_root: Option<&Path>,
+) -> Result<PathBuf> {
     let model_set = match accuracy {
         companion_contract::OcrAccuracy::Fast => "fast",
         companion_contract::OcrAccuracy::HighAccuracy => "best",
     };
-    let root = std::env::var_os("GLYPHMEND_TESSDATA_DIR")
-        .map(PathBuf::from)
+    let root = resource_tessdata_root
+        .map(Path::to_path_buf)
+        .or_else(|| std::env::var_os("GLYPHMEND_TESSDATA_DIR").map(PathBuf::from))
         .or_else(|| {
             std::env::current_exe()
                 .ok()
@@ -881,6 +917,48 @@ fn cancelled() -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolves_bundled_ocr_models_from_resource_paths_with_spaces() {
+        let root = runtime_test_directory("resources");
+        let model_dir = root.join("fast");
+        fs::create_dir_all(&model_dir).unwrap();
+        for model in model_languages("eng+fas").unwrap() {
+            fs::write(model_dir.join(format!("{model}.traineddata")), b"model").unwrap();
+        }
+
+        let path = resolve_tessdata(
+            &companion_contract::OcrAccuracy::Fast,
+            "eng+fas",
+            Some(&root),
+        )
+        .unwrap();
+        assert_eq!(path, model_dir);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn desktop_pdfium_lookup_fails_closed_when_bundled_resource_is_missing() {
+        let root = runtime_test_directory("missing resources");
+        fs::create_dir_all(&root).unwrap();
+        let paths = RuntimeResourcePaths {
+            pdfium_dir: root.clone(),
+            tessdata_root: root.clone(),
+        };
+        let error = bind_pdfium_library(Some(&paths))
+            .err()
+            .expect("missing PDFium must fail");
+        assert!(error.to_string().contains("Tauri resources"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn runtime_test_directory(label: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("glyphmend {label} {} {unique}", std::process::id()))
+    }
 
     #[test]
     fn accepts_the_shared_semantic_ir_v2_conformance_fixture() {

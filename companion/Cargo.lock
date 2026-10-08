@@ -507,11 +507,14 @@ dependencies = [
 name = "companion-tauri"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "companion-contract",
  "companion-core",
  "companion-extractor",
  "companion-service",
  "serde",
+ "serde_json",
+ "sha2 0.11.0",
  "tauri",
  "tauri-build",
  "tokio",

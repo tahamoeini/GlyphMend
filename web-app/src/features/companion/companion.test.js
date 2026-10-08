@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { LoopbackCompanionBridge, createCompanionProvider, readCompanionFragment } from "./bridge.js";
+import { createCompanionBridge as createDesktopCompanionBridge } from "./desktop-bridge.js";
 import { DOCUMENT_EXTRACTION_CAPABILITY, DOCUMENT_OPTIONS_SCHEMA, REGION_INPUT_SCHEMA, companionStatus, validateEndpoint, validateProviderResult, validateRegionMetadata } from "./protocol.js";
 
 function response(body = {}, ok = true, status = ok ? 200 : 400) {
@@ -124,6 +125,42 @@ it("submits a document job and returns the shared Semantic Document IR", async (
   expect(document.pages[0].nodes[0].content.markdown).toBe("A shared conformance sentence.");
   expect(onJobCreated).toHaveBeenCalledWith("document-job");
   expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ eventType: "progress" }));
+});
+
+it("uses the shared document job orchestration over the bundled Desktop transport", async () => {
+  const fixturePath = resolve(process.cwd(), "..", "companion", "fixtures", "semantic-document-ir", "v2", "conformance.json");
+  const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+  const transport = {
+    connect: vi.fn(async () => ({ status: "connected", capabilities: [] })),
+    createJob: vi.fn(async () => ({ jobId: "desktop-document-job" })),
+    appendChunk: vi.fn(async () => undefined),
+    completeInput: vi.fn(async () => undefined),
+    subscribe: vi.fn(() => ({ done: Promise.resolve(), stop: vi.fn() })),
+    getResult: vi.fn(async () => ({ terminal: true, status: "completed", result: fixture })),
+    cancel: vi.fn(async () => undefined),
+  };
+  globalThis.GlyphMendCompanion = transport;
+  try {
+    const bridge = await createDesktopCompanionBridge();
+    const document = await bridge.extractDocument({
+      bytes: new Uint8Array([37, 80, 68, 70]),
+      pageCount: 1,
+      selectedPages: [1],
+    });
+
+    expect(document.schemaVersion).toBe(2);
+    expect(document.pages[0].nodes[0].content.markdown).toBe("A shared conformance sentence.");
+    expect(transport.createJob).toHaveBeenCalledWith(
+      expect.objectContaining({ capabilityId: DOCUMENT_EXTRACTION_CAPABILITY, inputKind: "document" }),
+      expect.any(Object),
+    );
+    expect(transport.appendChunk).toHaveBeenCalledWith("desktop-document-job", 0, expect.any(Uint8Array), expect.any(Object));
+    expect(transport.completeInput).toHaveBeenCalledWith("desktop-document-job", expect.objectContaining({ totalBytes: 4 }), expect.any(Object));
+    expect(transport.subscribe).toHaveBeenCalledWith("desktop-document-job", expect.any(Function), expect.any(Object));
+    expect(transport.getResult).toHaveBeenCalledWith("desktop-document-job", expect.any(Object));
+  } finally {
+    delete globalThis.GlyphMendCompanion;
+  }
 });
 
 it("cancels an uploaded document job when its extraction signal is aborted", async () => {

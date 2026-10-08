@@ -1,4 +1,4 @@
-# CI and Companion releases
+# CI and releases
 
 ## Browser checks
 
@@ -13,9 +13,11 @@ npm test
 npm run build
 ```
 
-The `web-app.yml` workflow runs the browser checks and production build for pull requests.
+`.github/workflows/web-app.yml` runs these checks and verifies that browser output contains no Tauri API dependency. The Browser/PWA remains the standalone default.
 
-## Rust checks
+Every repository GitHub Actions workflow is started with `workflow_dispatch`. Pushes, pull requests, and tag creation do not start CI/CD automatically; choose a workflow under the Actions tab when you want to run it.
+
+## Rust Companion checks
 
 From `companion/`:
 
@@ -25,14 +27,43 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Companion CI verifies the shared contract and browser client against the local API. The full PDF extraction check, which exercises both OCR models, is not run in CI or for each release package. OCR development builds require the Tesseract and Leptonica development libraries; release jobs install the platform toolchain and package the runtime libraries.
+The Rust workspace's default members exclude the experimental Tauri host; run the Desktop workflow or its target-specific checks to validate that crate. OCR development builds require Tesseract and Leptonica development libraries.
 
-## Manual Companion release
+## Desktop CI and native runtime smoke tests
 
-Run `Companion Release` from GitHub Actions on the default branch and provide a SemVer version such as `0.1.0-beta.1`. The workflow builds six unsigned portable packages: Windows x64, macOS x64/arm64, and Linux x64/arm64. Each archive includes the executable, PDFium/Tesseract runtime files, Fast and Best OCR models for English, Russian, Persian, and Simplified Chinese, third-party notices, a runtime manifest, and internal checksums. The workflow also uploads release archives and checksum files as GitHub Actions artifacts, creates an SPDX SBOM, produces provenance attestations, and publishes GitHub Release assets.
+`.github/workflows/companion-tauri.yml` runs manually for Windows x64, Ubuntu 24.04 x64, macOS Intel, and Apple silicon. It builds both web adapters, checks the Tauri IPC adapter, runs Rust tests, and builds the host without packaging. The Tauri IPC assembly enforces a 64 KiB part limit, 1 MiB input limit, and a cap on incomplete buffered chunks.
 
-All packages are explicitly unsigned; signing certificates, Apple notarization, and signing secrets are not required. Windows SmartScreen or macOS Gatekeeper may warn or block launch. The release page and each archive disclose this and provide checksums for verification. Versions containing a prerelease identifier are published as prereleases. Stable promotion remains gated on repeatable benchmark improvements and a browser regression review.
+The Desktop prerelease workflow runs only when manually dispatched from the default branch with a version. It builds on the same native hosts with the prepared runtime and smoke-tests digital PDF text plus an image-only PDF page through the shared Rust job service and OCR provider. The extraction smoke test resolves the bundled runtime from a temporary path containing spaces; the Windows installer inspection also uses an install path containing spaces. It checks that the pinned PDFium library, OCR models, notices, and runtime manifest are present, and generates a native runtime SBOM and checksums.
 
-The workflow only accepts dispatches from the repository's default branch. PDFium archives are checked against pinned upstream SHA-256 digests, and OCR models are fetched from pinned Tesseract commits recorded in each package manifest. No environment secrets or paid signing service are needed for this unsigned workflow.
+For a local frontend/IPC check, from `web-app/` and the Tauri web folder:
 
-No historical Python release or tag is rewritten by the current workflows.
+```bash
+cd web-app
+npm ci
+npm run build
+npm run build:desktop
+
+cd ../companion/apps/companion-tauri/web
+npm ci
+node --test src/tauri-adapter.test.mjs
+```
+
+For the app host, install native Tauri and Tesseract/Leptonica prerequisites for the current OS, prepare resources, then run `npm run tauri -- dev`. The [Desktop guide](desktop.md) documents the target layout and runtime preparation.
+
+## GlyphMend Desktop prerelease
+
+`.github/workflows/glyphmend-desktop-release.yml` is manually dispatched from the default branch with a prerelease version of the form `X.Y.Z-beta.N`. It builds four distinct installers: Windows x64 NSIS `.exe`, Ubuntu 24.04 x64 `.deb`, macOS Intel `.dmg`, and macOS Apple silicon `.dmg`. It validates runtime resources and notices, fingerprints every resource file, and adds SHA-256 checksums and an SPDX SBOM.
+
+After every native package job succeeds, the manually started workflow creates a `glyphmend-vX.Y.Z-beta.N` tag and an unsigned **draft prerelease**. Drafts are not public until published. Do not dispatch the release workflow unless creating that tag and draft release is intended. Stable direct distribution requires configured Windows signing and macOS signing/notarization.
+
+The standard Windows installer uses a WebView2 bootstrapper and may need network access if WebView2 is missing. The optional WebView2 offline installer adds about 127 MB and is not included. Desktop package sizes and minimum OS support still need confirmation from native release artifacts and clean-machine validation.
+
+## Standalone Companion manual release
+
+`.github/workflows/companion-release.yml` is the separate unsigned portable CLI release. It builds Windows x64/ARM64, macOS x64/ARM64, and Linux x64/ARM64 packages. Each package contains PDFium, Tesseract/Leptonica runtime files, English/Russian/Persian/Simplified Chinese Fast and Best models, notices, checksums, an SPDX SBOM, and provenance attestations.
+
+This workflow is dispatched manually from the default branch and currently publishes its Companion release when run. It is distinct from the Desktop draft-only release workflow. The Companion package workflow pins PDFium Chromium 8066 and the OCR model commits, and checks the PDFium archive hash before packaging.
+
+## Acceptance still pending
+
+Native CI and release artifacts must pass their real runners before we report supported packages and sizes. A packaged WebView test remains required for launch, WebAssembly/worker startup, offline reload, IndexedDB checkpoints/logs, restart, and upgrade behavior. The unsigned launch experience is not equivalent to a signed/notarized stable release.

@@ -57,7 +57,7 @@
       display: block !important;
     }
   </style>
-  <title>GlyphMend — Browser Edition</title>
+  <title>GlyphMend</title>
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -145,7 +145,7 @@
           <label class="quiet file-button">Import workspace<input id="workspaceInput" type="file" accept="application/json,.json"></label>
           <label class="quiet file-button">Open Markdown<input id="markdownInput" type="file" accept="text/markdown,.md,.markdown"></label>
         </div>
-        <div class="welcome-actions" aria-label="Optional native companion">
+        <div id="welcomeCompanionControls" class="welcome-actions" aria-label="Optional native companion">
           <button id="welcomeCompanionButton" class="quiet" type="button">Connect optional companion</button>
           <label class="field-label" for="welcomeCompanionEndpoint">Companion endpoint<input id="welcomeCompanionEndpoint" type="url" inputmode="url" placeholder="http://127.0.0.1:port"></label>
           <label class="field-label" for="welcomeCompanionCode">Pairing code<input id="welcomeCompanionCode" type="password" autocomplete="off"></label>
@@ -227,7 +227,7 @@
               </fieldset>
               <fieldset class="advanced-group">
                 <legend>Processing</legend>
-                <label class="field-label" for="extractionEngine">Extraction engine<select id="extractionEngine"><option value="browser" selected>Browser (default)</option><option value="companion">Optional Companion</option></select><small>If the Companion cannot connect or fails, this job continues in the browser.</small></label>
+                <label class="field-label" for="extractionEngine">Extraction engine<select id="extractionEngine"><option value="browser" selected>Browser</option><option value="companion">Optional Companion</option></select><small id="engineRuntimeStatus" aria-live="polite">Browser extraction is ready. Companion status appears after connection.</small><small id="engineUsedStatus" aria-live="polite">The engine used is recorded with each page and in the quality report.</small></label>
                 <label class="field-label" for="companionOcrAccuracy">Companion OCR accuracy<select id="companionOcrAccuracy"><option value="fast" selected>Fast (default)</option><option value="high-accuracy">High Accuracy</option></select><small>Uses the selected OCR language when Companion is selected.</small></label>
                 <label class="field-label" for="pdfPassword">PDF password<input id="pdfPassword" type="password" autocomplete="off" placeholder="For encrypted PDFs"></label>
                 <div class="field-grid"><label class="field-label" for="maxFileMb">Max file (MB)<input id="maxFileMb" type="number" min="1" max="4096" value="512"></label><label class="field-label" for="maxPages">Max pages<input id="maxPages" type="number" min="1" max="10000" value="2000"></label></div>
@@ -235,7 +235,7 @@
                 <label class="control-row compact"><span><strong>Strict mode</strong><small>Stop on the first page error</small></span><span class="switch"><input id="strict" type="checkbox"><i aria-hidden="true"></i></span></label>
                 <p class="technical-note">Browser extraction remains the complete, install-free default. The optional Companion uses local PDFium and the selected Tesseract OCR language. Both feed the same Semantic Document IR and exports.</p>
               </fieldset>
-              <fieldset class="advanced-group">
+              <fieldset id="settingsCompanionControls" class="advanced-group">
                 <legend>Optional companion</legend>
                 <label class="field-label" for="settingsCompanionEndpoint">Local endpoint<input id="settingsCompanionEndpoint" type="url" inputmode="url" placeholder="http://127.0.0.1:port"></label>
                 <label class="field-label" for="settingsCompanionCode">Pairing code<input id="settingsCompanionCode" type="password" autocomplete="off"></label>
@@ -298,6 +298,6 @@
   </footer>
   <script type="module" src="/src/brand-bootstrap.js"></script>
   <script type="module" src="/src/licensing.js"></script>
-  <script type="module" src="/src/app.js"></script>
+  <script type="module" src="/src/entry.js"></script>
 </body>
 </html>

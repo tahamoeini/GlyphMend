@@ -3,7 +3,6 @@
 
 use anyhow::Result;
 use companion_bridge::{start, BridgeConfig, DEFAULT_WEB_ORIGIN};
-use companion_core::DiagnosticMockProvider;
 use companion_extractor::PdfiumTesseractProvider;
 use companion_service::JobManager;
 use std::{process::Command, sync::Arc};
@@ -19,10 +18,9 @@ async fn main() -> Result<()> {
     let self_test = arguments.iter().any(|argument| argument == "--self-test");
     let web_origin = parse_web_origin(&arguments)?;
     let config = BridgeConfig::for_web_origin(&web_origin)?;
-    let manager = JobManager::with_default_storage_providers(vec![
-        Arc::new(DiagnosticMockProvider),
-        Arc::new(PdfiumTesseractProvider),
-    ])?;
+    let manager = JobManager::with_default_storage_providers(vec![Arc::new(
+        PdfiumTesseractProvider::default(),
+    )])?;
     let handle = start(config, Arc::new(manager)).await?;
     let connection_url = format!(
         "{}/#companionEndpoint={}&companionCode={}",

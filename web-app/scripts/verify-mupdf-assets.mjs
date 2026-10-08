@@ -6,6 +6,13 @@ import { missingMupdfRuntimeAssets, MUPDF_RUNTIME_ASSETS } from "../src/features
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const dist = join(root, "dist");
+const bundleFiles = await readdir(join(dist, "assets")).catch(() => []);
+for (const file of bundleFiles.filter((name) => name.endsWith(".js"))) {
+  const code = await readFile(join(dist, "assets", file), "utf8");
+  if (code.includes("__TAURI__") || code.includes("companion_create_job")) {
+    throw new Error("Browser build unexpectedly includes the desktop IPC adapter.");
+  }
+}
 const mupdfDirectory = join(dist, "mupdf");
 const presentAssets = await readdir(mupdfDirectory).catch(() => []);
 const missing = missingMupdfRuntimeAssets(presentAssets);
