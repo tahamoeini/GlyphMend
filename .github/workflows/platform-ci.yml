@@ -529,17 +529,21 @@ jobs:
           root="$RUNNER_TEMP/GlyphMend Desktop Smoke"
           mkdir -p "$root"
           dpkg-deb --extract "$deb" "$root"
-          test -f "$root/usr/lib/glyphmend/runtime/runtime-manifest.json"
-          test -f "$root/usr/lib/glyphmend/runtime/pdfium/libpdfium.so"
-          test -f "$root/usr/lib/glyphmend/runtime/tessdata/best/chi_sim.traineddata"
-          test -f "$root/usr/lib/glyphmend/runtime/notices/LICENSES.txt"
+          product_name=$(node -p "require('./companion/apps/companion-tauri/src-tauri/tauri.conf.json').productName")
+          resources="$root/usr/lib/$product_name"
+          test -f "$resources/runtime/runtime-manifest.json"
+          test -f "$resources/runtime/pdfium/libpdfium.so"
+          test -f "$resources/runtime/tessdata/best/chi_sim.traineddata"
+          test -f "$resources/runtime/notices/LICENSES.txt"
+          echo "GLYPHMEND_TEST_RESOURCE_DIR=$resources" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$resources/runtime/lib" >> "$GITHUB_ENV"
           depends=$(dpkg-deb --field "$deb" Depends)
           for package in libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 librsvg2-2 libc6 libgcc-s1 libstdc++6; do
             [[ "$depends" == *"$package"* ]] || { echo "Missing Debian runtime dependency: $package" >&2; exit 1; }
           done
           executable=$(find "$root/usr/bin" -maxdepth 1 -type f -print -quit)
           test -n "$executable"
-          LD_LIBRARY_PATH="$root/usr/lib/glyphmend/runtime/lib" ldd "$executable" | tee "$RUNNER_TEMP/glyphmend-ldd.txt"
+          LD_LIBRARY_PATH="$resources/runtime/lib" ldd "$executable" | tee "$RUNNER_TEMP/glyphmend-ldd.txt"
           if grep -q 'not found' "$RUNNER_TEMP/glyphmend-ldd.txt"; then
             echo 'The extracted executable has unresolved shared libraries.' >&2
             exit 1
@@ -549,8 +553,6 @@ jobs:
         working-directory: companion
         env:
           GLYPHMEND_RUNTIME_SMOKE: '1'
-          GLYPHMEND_TEST_RESOURCE_DIR: ${{ runner.temp }}/GlyphMend Desktop Smoke/usr/lib/glyphmend
-          LD_LIBRARY_PATH: ${{ runner.temp }}/GlyphMend Desktop Smoke/usr/lib/glyphmend/runtime/lib
         run: |
           node apps/companion-tauri/src-tauri/scripts/validate-runtime.mjs
           cargo test --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}

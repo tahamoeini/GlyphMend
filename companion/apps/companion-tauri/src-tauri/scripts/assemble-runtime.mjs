@@ -124,7 +124,8 @@ function collectLinuxLibraries(seedFiles) {
     }
   }
   const executable = path.resolve(repositoryRoot, "companion/target", target, "release", "companion-tauri");
-  run("patchelf", ["--set-rpath", "$ORIGIN/../lib/glyphmend/runtime/lib", executable]);
+  const productName = JSON.parse(readFileSync(path.join(scriptDir, "..", "tauri.conf.json"), "utf8")).productName;
+  run("patchelf", ["--set-rpath", `$ORIGIN/../lib/${productName}/runtime/lib`, executable]);
   const pdfium = path.join(runtimeDir, "pdfium", "libpdfium.so");
   run("patchelf", ["--set-rpath", "$ORIGIN/../lib", pdfium]);
   for (const file of walkFiles(runtimeLibDir)) {
