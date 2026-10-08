@@ -540,7 +540,10 @@ jobs:
           executable=$(find "$root/usr/bin" -maxdepth 1 -type f -print -quit)
           test -n "$executable"
           LD_LIBRARY_PATH="$root/usr/lib/glyphmend/runtime/lib" ldd "$executable" | tee "$RUNNER_TEMP/glyphmend-ldd.txt"
-          ! grep -q 'not found' "$RUNNER_TEMP/glyphmend-ldd.txt"
+          if grep -q 'not found' "$RUNNER_TEMP/glyphmend-ldd.txt"; then
+            echo 'The extracted executable has unresolved shared libraries.' >&2
+            exit 1
+          fi
       - name: Smoke test the installed Ubuntu runtime
         if: runner.os == 'Linux'
         working-directory: companion
@@ -576,7 +579,10 @@ jobs:
             fi
             codesign --verify --strict "$library"
           done < <(find "$app/Contents/Resources/runtime" -type f -name '*.dylib' -print0)
-          ! otool -L "$executable" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)'
+          if otool -L "$executable" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)'; then
+            echo 'The packaged executable still references Homebrew paths.' >&2
+            exit 1
+          fi
           export GLYPHMEND_RUNTIME_SMOKE=1
           export GLYPHMEND_TEST_RESOURCE_DIR="$mount/GlyphMend.app/Contents/Resources"
           export DYLD_LIBRARY_PATH="$mount/GlyphMend.app/Contents/Resources/runtime/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}"
