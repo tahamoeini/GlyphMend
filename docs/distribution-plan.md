@@ -17,7 +17,7 @@ All modes use the shared interface's Semantic Document IR validation, review, ch
 | Artifact | Configured targets | Release contents |
 | --- | --- | --- |
 | Browser/PWA | Static web assets | Browser build, project license, generated dependency report, third-party notices, checksum, SPDX SBOM, and provenance. |
-| Integrated Desktop | Windows x64 NSIS, Ubuntu 24.04 x64 `.deb`, macOS Intel `.dmg`, macOS Apple silicon `.dmg` | Shared web interface, bundled Rust engine and native runtime data, runtime manifest, notices, checksum, SPDX SBOM, and provenance. Each package is inspected and its extracted runtime is used for digital-text and raster-OCR smoke checks. |
+| Integrated Desktop | Windows x64 NSIS, Ubuntu 24.04 x64 `.deb`, macOS 15+ Intel `.dmg`, macOS 15+ Apple silicon `.dmg` | Shared web interface, bundled Rust engine and native runtime data, runtime manifest, notices, platform-specific checksum file, SPDX SBOM, and provenance. Each package's installed or extracted runtime is checksum-validated and used for digital-text and raster-OCR smoke checks. |
 
 There is no standalone Companion release matrix. All artifacts use one calculated prerelease version and are attached to one draft GitHub prerelease after every package job succeeds. The draft remains unpublished until a maintainer reviews and publishes it.
 

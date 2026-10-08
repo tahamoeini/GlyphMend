@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { hasVerifiedPdfium } from "./runtime-integrity.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDir, "../../../../..");
@@ -294,8 +295,7 @@ function hasMatchingRuntime() {
       return false;
     }
 
-    const pdfiumPath = path.join(runtimeDir, "pdfium", targetConfig.library);
-    if (!matchesDigest(pdfiumPath, manifest.pdfium.fileSha256)) return false;
+    if (manifest.pdfium?.file !== targetConfig.library || !hasVerifiedPdfium(runtimeDir, manifest)) return false;
 
     for (const modelSet of Object.keys(tessdataCommits)) {
       for (const language of languages) {

@@ -124,6 +124,8 @@ jobs:
       - run: npm ci --include=optional
       - name: Run browser test suite
         run: npm test
+      - name: Test desktop packaging integrity and dependency collection
+        run: node --test companion/apps/companion-tauri/src-tauri/scripts/packaging.test.mjs
 
   companion-tests:
     if: inputs.validation == 'full'
@@ -189,9 +191,11 @@ jobs:
           - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos-x64
+            macos_deployment_target: '15.0'
           - os: macos-15
             target: aarch64-apple-darwin
             platform: macos-arm64
+            macos_deployment_target: '15.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -239,6 +243,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           VCPKG_TRIPLET: ${{ matrix.vcpkg_triplet }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target || '' }}
 
   paired-benchmarks:
     if: inputs.validation == 'benchmark'
@@ -384,9 +389,10 @@ jobs:
           printf 'GlyphMend %s browser distribution\n' "$VERSION" > "$staging/VERSION.txt"
           archive="release/GlyphMend-${VERSION}-browser.tar.gz"
           tar -czf "$archive" -C release "GlyphMend-${VERSION}-browser"
-          sha256sum "$archive" > release/SHA256SUMS-browser
       - name: Generate the browser distribution SBOM
         run: npm sbom --workspace glyphmend-browser --sbom-format spdx --omit=dev > release/SBOM-browser.spdx.json
+      - name: Checksum the browser archive and SBOM
+        run: node companion/apps/companion-tauri/src-tauri/scripts/write-release-checksums.mjs release SHA256SUMS-browser.txt
       - name: Attest browser release assets
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -420,15 +426,18 @@ jobs:
           - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos-intel
+            macos_deployment_target: '15.0'
           - os: macos-15
             target: aarch64-apple-darwin
             platform: macos-apple-silicon
+            macos_deployment_target: '15.0'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     env:
       TARGET: ${{ matrix.target }}
       GLYPHMEND_VERSION: ${{ needs.release-version.outputs.version }}
       VCPKG_TRIPLET: ${{ matrix.vcpkg_triplet }}
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -502,7 +511,10 @@ jobs:
         working-directory: companion
         env:
           GLYPHMEND_RUNTIME_SMOKE: '1'
-        run: cargo test --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
+        run: |
+          node apps/companion-tauri/src-tauri/scripts/validate-runtime.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
       - name: Extract and inspect the Ubuntu package
         if: runner.os == 'Linux'
         shell: bash
@@ -523,7 +535,7 @@ jobs:
           done
           executable=$(find "$root/usr/bin" -maxdepth 1 -type f -print -quit)
           test -n "$executable"
-          ldd "$executable" | tee "$RUNNER_TEMP/glyphmend-ldd.txt"
+          LD_LIBRARY_PATH="$root/usr/lib/glyphmend/runtime/lib" ldd "$executable" | tee "$RUNNER_TEMP/glyphmend-ldd.txt"
           ! grep -q 'not found' "$RUNNER_TEMP/glyphmend-ldd.txt"
       - name: Smoke test the installed Ubuntu runtime
         if: runner.os == 'Linux'
@@ -532,7 +544,9 @@ jobs:
           GLYPHMEND_RUNTIME_SMOKE: '1'
           GLYPHMEND_TEST_RESOURCE_DIR: ${{ runner.temp }}/GlyphMend Desktop Smoke/usr/lib/glyphmend
           LD_LIBRARY_PATH: ${{ runner.temp }}/GlyphMend Desktop Smoke/usr/lib/glyphmend/runtime/lib
-        run: cargo test --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
+        run: |
+          node apps/companion-tauri/src-tauri/scripts/validate-runtime.mjs
+          cargo test --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
       - name: Mount and inspect the macOS disk image
         if: runner.os == 'macOS'
         shell: bash
@@ -543,6 +557,7 @@ jobs:
           mount="$RUNNER_TEMP/GlyphMend Desktop Smoke"
           mkdir -p "$mount"
           hdiutil attach -nobrowse -mountpoint "$mount" "$dmg"
+          trap 'hdiutil detach "$mount"' EXIT
           app="$mount/GlyphMend.app"
           test -f "$app/Contents/Resources/runtime/runtime-manifest.json"
           test -f "$app/Contents/Resources/runtime/pdfium/libpdfium.dylib"
@@ -550,12 +565,19 @@ jobs:
           test -f "$app/Contents/Resources/runtime/notices/LICENSES.txt"
           executable=$(find "$app/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)
           test -n "$executable"
-          ! otool -L "$executable" | grep -E '/opt/homebrew|/usr/local/Cellar'
+          while IFS= read -r -d '' library; do
+            if otool -L "$library" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)'; then
+              echo "Unrelocated Homebrew reference in $library" >&2
+              exit 1
+            fi
+            codesign --verify --strict "$library"
+          done < <(find "$app/Contents/Resources/runtime" -type f -name '*.dylib' -print0)
+          ! otool -L "$executable" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)'
           export GLYPHMEND_RUNTIME_SMOKE=1
           export GLYPHMEND_TEST_RESOURCE_DIR="$mount/GlyphMend.app/Contents/Resources"
           export DYLD_LIBRARY_PATH="$mount/GlyphMend.app/Contents/Resources/runtime/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}"
+          node companion/apps/companion-tauri/src-tauri/scripts/validate-runtime.mjs
           cargo test --manifest-path companion/Cargo.toml --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
-          hdiutil detach "$mount"
       - name: Create native runtime SPDX SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
@@ -563,18 +585,14 @@ jobs:
           format: spdx-json
           output-file: release/SBOM-${{ matrix.platform }}.spdx.json
           upload-artifact: false
-      - name: Copy and checksum the Windows installer and SBOM
+      - name: Copy the Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $installer = Get-ChildItem companion/target/${{ matrix.target }}/release/bundle/nsis -Filter *.exe | Select-Object -First 1
           if (-not $installer) { throw 'NSIS installer was not produced.' }
           Copy-Item -LiteralPath $installer.FullName -Destination "release/GlyphMend-$env:GLYPHMEND_VERSION-${{ matrix.platform }}.exe"
-          Get-ChildItem release -File | Where-Object {$_.Name -notlike 'SHA256SUMS*'} | ForEach-Object {
-            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $($_.Name)"
-          } | Set-Content -LiteralPath 'release/SHA256SUMS.txt' -Encoding ascii
-      - name: Copy and checksum the macOS or Ubuntu installer and SBOM
+      - name: Copy the macOS or Ubuntu installer
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -585,7 +603,8 @@ jobs:
           esac
           test -n "$installer"
           cp "$installer" "release/GlyphMend-${GLYPHMEND_VERSION}-${{ matrix.platform }}.$extension"
-          (cd release && sha256sum "GlyphMend-${GLYPHMEND_VERSION}-${{ matrix.platform }}.$extension" "SBOM-${{ matrix.platform }}.spdx.json" > SHA256SUMS.txt)
+      - name: Checksum this platform's installer and SBOM
+        run: node companion/apps/companion-tauri/src-tauri/scripts/write-release-checksums.mjs release SHA256SUMS-${{ matrix.platform }}.txt
       - name: Attest the installer and SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

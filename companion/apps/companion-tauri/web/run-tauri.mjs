@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,18 +35,30 @@ if (!tauriCliEntry || (nativeCliPackage && !nativeCliAvailable)) {
 }
 
 const tauriArgs = process.argv.slice(2);
-const requestedTarget = process.env.TARGET?.trim();
-if (
-  requestedTarget
-  && (tauriArgs[0] === "build" || tauriArgs[0] === "bundle")
-  && !tauriArgs.some((arg) => arg === "--target" || arg.startsWith("--target=") || arg === "-t")
-) {
+const tauriEnvironment = { ...process.env };
+if (tauriArgs[0] === "build" || tauriArgs[0] === "bundle") {
   const separatorIndex = tauriArgs.indexOf("--");
   const insertIndex = separatorIndex === -1 ? tauriArgs.length : separatorIndex;
-  tauriArgs.splice(insertIndex, 0, "--target", requestedTarget);
-  console.log(`[tauri] Forwarding TARGET=${requestedTarget} to the Tauri CLI.`);
+  const options = tauriArgs.slice(0, insertIndex);
+  const targetOption = options.findIndex((arg) => arg === "--target" || arg === "-t");
+  if (targetOption >= 0 && (!options[targetOption + 1] || options[targetOption + 1].startsWith("-"))) {
+    throw new Error("Tauri --target requires a Rust target triple.");
+  }
+  const explicitTarget = targetOption >= 0 ? options[targetOption + 1]
+    : options.find((arg) => arg.startsWith("--target="))?.slice("--target=".length)
+      || options.find((arg) => arg.startsWith("-t") && arg.length > 2)?.slice(2);
+  const manifestPath = path.join(tauriDir, "resources/runtime/runtime-source-manifest.json");
+  const preparedTarget = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")).target : undefined;
+  const requestedTarget = explicitTarget || process.env.TARGET?.trim() || preparedTarget;
+  if (explicitTarget && process.env.TARGET && explicitTarget !== process.env.TARGET.trim()) {
+    throw new Error(`Tauri --target ${explicitTarget} conflicts with TARGET=${process.env.TARGET}. Use the same target for compilation and runtime preparation.`);
+  }
+  if (requestedTarget) {
+    tauriEnvironment.TARGET = requestedTarget;
+    if (!explicitTarget) tauriArgs.splice(insertIndex, 0, "--target", requestedTarget);
+    console.log(`[tauri] Building and assembling runtime resources for ${requestedTarget}.`);
+  }
 }
-const tauriEnvironment = { ...process.env };
 if (isWslWindowsMount) {
   console.warn(
     "[tauri] This WSL checkout is on a Windows-mounted drive. Use a separate checkout under ~/src/glyph-mend; "

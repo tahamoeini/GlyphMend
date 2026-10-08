@@ -63,7 +63,7 @@ See [Companion architecture and API](docs/companion-engine.md) for the protocol 
 
 ## GlyphMend Desktop
 
-The integrated Desktop package targets Windows x64 (NSIS setup), Ubuntu 24.04 x64 (`.deb`), and macOS Intel and Apple silicon (`.dmg`). Both macOS architecture builds and all other platform packages use the same automatically calculated SemVer prerelease. One manually dispatched release builds the browser artifact and integrated Desktop installers into a single unsigned draft release; there is no separate Companion package. Stable public distribution requires code signing and macOS notarization.
+The integrated Desktop package targets Windows x64 (NSIS setup), Ubuntu 24.04 x64 (`.deb`), and macOS 15 or later on Intel and Apple silicon (`.dmg`). Both macOS architecture builds and all other platform packages use the same automatically calculated SemVer prerelease. One manually dispatched release builds the browser artifact and integrated Desktop installers into a single unsigned draft release; there is no separate Companion package. Stable public distribution requires code signing and macOS notarization.
 
 The standard Windows installer uses the WebView2 bootstrapper and may need an internet connection to install WebView2 on a machine without its runtime. The alternative offline WebView2 installer adds about 127 MB and is not currently bundled. After installation, GlyphMend's frontend, PDFium, Tesseract, and all supported OCR models are bundled for offline work. The Desktop guide records the package and runtime checks: [GlyphMend Desktop](docs/desktop.md).
 

@@ -2,9 +2,12 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { hasVerifiedPdfium } from "./runtime-integrity.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const runtimeDir = path.resolve(scriptDir, "../resources/runtime");
+const runtimeDir = process.env.GLYPHMEND_TEST_RESOURCE_DIR
+  ? path.resolve(process.env.GLYPHMEND_TEST_RESOURCE_DIR, "runtime")
+  : path.resolve(scriptDir, "../resources/runtime");
 const target = process.env.TARGET || targetForHost();
 const platform = target.includes("windows") ? "windows" : target.includes("apple-darwin") ? "macos" : "linux";
 const languages = ["eng", "rus", "fas", "chi_sim"];
@@ -68,9 +71,8 @@ if (checkFile("runtime-source-manifest.json")) {
     }
     if (sourceManifest.pdfium?.file !== pdfiumName) fail(`PDFium manifest entry must name ${pdfiumName}.`);
     if (!sourceManifest.pdfium?.fileSha256) fail("PDFium source manifest is missing the extracted library SHA-256.");
-    else if (existsSync(path.join(runtimeDir, "pdfium", pdfiumName))
-      && digest(path.join(runtimeDir, "pdfium", pdfiumName)) !== sourceManifest.pdfium.fileSha256) {
-      fail("Bundled PDFium SHA-256 does not match its prepared source manifest.");
+    else if (!hasVerifiedPdfium(runtimeDir, sourceManifest)) {
+      fail("PDFium matches neither its verified upstream digest nor its assembled bundle digest and provenance.");
     }
     if (!sourceManifest.tessdata?.modelDigests) fail("OCR model digests are missing from the source manifest.");
     for (const modelSet of ["fast", "best"]) {
@@ -115,6 +117,11 @@ if (!checkFile("runtime-manifest.json")) {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     if (manifest.distribution !== "desktop" || manifest.target !== target || manifest.platform !== platform) {
       fail(`Desktop runtime manifest target mismatch (expected ${target}, got ${manifest.target || "missing"}).`);
+    }
+    if (manifest.pdfium?.fileSha256 !== sourceManifest?.pdfium?.fileSha256
+      || manifest.pdfium?.archiveSha256 !== sourceManifest?.pdfium?.archiveSha256
+      || manifest.pdfium?.bundledFileSha256 !== digest(path.join(runtimeDir, "pdfium", pdfiumName))) {
+      fail("Assembled PDFium provenance or bundled digest does not match the source manifest and library.");
     }
     if (!Array.isArray(manifest.files) || !manifest.files.length) {
       fail("Desktop runtime manifest does not list packaged files.");

@@ -12,6 +12,8 @@ import {
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { hasVerifiedPdfium, sha256 } from "./runtime-integrity.mjs";
+import { collectMacDependencyGraph } from "./macos-dependencies.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDir, "../../../../..");
@@ -19,6 +21,10 @@ const runtimeDir = path.resolve(scriptDir, "../resources/runtime");
 const runtimeLibDir = path.join(runtimeDir, "lib");
 const sourceManifestPath = path.join(runtimeDir, "runtime-source-manifest.json");
 const spdxTextCache = new Map();
+const previousManifestPath = path.join(runtimeDir, "runtime-manifest.json");
+const previousFiles = existsSync(previousManifestPath)
+  ? JSON.parse(readFileSync(previousManifestPath, "utf8")).files || []
+  : [];
 
 function run(command, args, { allowFailure = false, encoding = "utf8" } = {}) {
   const result = spawnSync(command, args, { encoding, maxBuffer: 64 * 1024 * 1024 });
@@ -63,9 +69,10 @@ function copyUniqueLibrary(source, destinationRoot) {
   if (existsSync(destination)) {
     const oldHash = createHash("sha256").update(readFileSync(destination)).digest("hex");
     const newHash = createHash("sha256").update(readFileSync(sourcePath)).digest("hex");
-    if (oldHash !== newHash) {
+    if (oldHash !== newHash && !canReplaceAssembledLibrary(destination, oldHash)) {
       throw new Error(`Native dependency name collision: ${sourcePath} and ${destination}`);
     }
+    if (oldHash !== newHash) copyFileSync(sourcePath, destination);
   } else {
     copyFileSync(sourcePath, destination);
   }
@@ -74,13 +81,21 @@ function copyUniqueLibrary(source, destinationRoot) {
     if (existsSync(alias)) {
       const oldHash = createHash("sha256").update(readFileSync(alias)).digest("hex");
       const newHash = createHash("sha256").update(readFileSync(sourcePath)).digest("hex");
-      if (oldHash !== newHash) throw new Error(`Native dependency alias collision: ${sourceName}`);
+      if (oldHash !== newHash && !canReplaceAssembledLibrary(alias, oldHash)) {
+        throw new Error(`Native dependency alias collision: ${sourceName}`);
+      }
+      if (oldHash !== newHash) copyFileSync(sourcePath, alias);
     } else {
       copyFileSync(sourcePath, alias);
     }
     return alias;
   }
   return destination;
+}
+
+function canReplaceAssembledLibrary(file, digest) {
+  const relative = path.relative(runtimeDir, file).split(path.sep).join("/");
+  return previousFiles.some((entry) => entry.path === relative && entry.sha256 === digest);
 }
 
 function collectLinuxLibraries(seedFiles) {
@@ -157,8 +172,16 @@ function validateMacDeploymentTarget(files) {
   if (!configured) throw new Error("Tauri macOS minimumSystemVersion is not configured.");
   const configuredParts = versionParts(configured);
   for (const file of files) {
+    const expectedArch = target.startsWith("aarch64-") ? "arm64" : "x86_64";
+    if (!run("lipo", ["-archs", file]).output.split(/\s+/).includes(expectedArch)) {
+      throw new Error(`${file} does not contain the required ${expectedArch} architecture.`);
+    }
     const loadCommands = run("otool", ["-l", file]).output;
     const minimums = [...loadCommands.matchAll(/\bminos\s+(\d+(?:\.\d+){1,2})/g)].map((match) => match[1]);
+    if (loadCommands.includes("LC_VERSION_MIN_MACOSX")) {
+      minimums.push(...[...loadCommands.matchAll(/cmd LC_VERSION_MIN_MACOSX\s+cmdsize \d+\s+version (\d+(?:\.\d+){1,2})/g)]
+        .map((match) => match[1]));
+    }
     if (!minimums.length) {
       throw new Error(`Could not determine the minimum macOS version from load commands in ${file}.`);
     }
@@ -190,36 +213,26 @@ async function spdxText(id, exception = false) {
 }
 
 async function collectMacLibraries(executable) {
-  const packages = new Set(["tesseract", "leptonica"]);
-  for (const dependency of run("brew", ["deps", "--installed", "tesseract", "leptonica"]).output.split(/\r?\n/)) {
-    if (dependency.trim()) packages.add(dependency.trim());
-  }
-
-  const candidates = new Set();
-  for (const packageName of packages) {
-    const output = run("brew", ["list", "--verbose", packageName]).output;
-    for (const file of output.split(/\r?\n/)) {
-      if (/\.dylib$/i.test(file) && existsSync(file)) candidates.add(file);
-    }
-  }
-  if (!candidates.size) throw new Error("Homebrew did not expose any Tesseract or Leptonica runtime libraries.");
-  mkdirSync(runtimeLibDir, { recursive: true });
-  const copied = new Map();
-  for (const source of candidates) {
-    const destination = copyUniqueLibrary(source, runtimeLibDir);
-    copied.set(path.basename(source), destination);
-    copied.set(path.basename(realpathSync(source)), path.join(runtimeLibDir, path.basename(realpathSync(source))));
-  }
-
   const pdfium = path.join(runtimeDir, "pdfium", "libpdfium.dylib");
+  const { libraries, packages } = collectMacDependencyGraph({
+    executable,
+    pdfium,
+    cellar: run("brew", ["--cellar"]).output,
+    inspect: (file) => ({
+      dependencies: otoolDependencies(file),
+      rpaths: [...run("otool", ["-l", file]).output.matchAll(/\bpath\s+(.+?)\s+\(offset \d+\)/g)]
+        .map((match) => match[1]),
+    }),
+  });
+  if (!libraries.size) throw new Error("The macOS host has no non-system runtime libraries.");
+  mkdirSync(runtimeLibDir, { recursive: true });
+  for (const source of libraries.values()) copyUniqueLibrary(source, runtimeLibDir);
   const filesToPatch = [executable, pdfium, ...new Set(walkFiles(runtimeLibDir))];
   for (const file of filesToPatch) {
     for (const dependency of otoolDependencies(file)) {
       if (dependency.startsWith("/System/") || dependency.startsWith("/usr/lib/")) continue;
-      if (!copied.has(path.basename(dependency))) {
-        const packageLib = [...candidates].find((candidate) => path.basename(candidate) === path.basename(dependency));
-        if (!packageLib) throw new Error(`macOS runtime dependency is not bundled: ${dependency} (required by ${file}).`);
-        copied.set(path.basename(dependency), copyUniqueLibrary(packageLib, runtimeLibDir));
+      if (!existsSync(path.join(runtimeLibDir, path.basename(dependency)))) {
+        throw new Error(`macOS runtime dependency is not bundled: ${dependency} (required by ${file}).`);
       }
       if (dependency !== `@rpath/${path.basename(dependency)}`) {
         run("install_name_tool", ["-change", dependency, `@rpath/${path.basename(dependency)}`, file]);
@@ -234,6 +247,10 @@ async function collectMacLibraries(executable) {
   addRpath(executable, "@executable_path/../Resources/runtime/lib");
   addRpath(pdfium, "@loader_path/../lib");
   validateMacDeploymentTarget(filesToPatch);
+  for (const file of filesToPatch.filter((file) => file !== executable)) {
+    run("codesign", ["--force", "--sign", "-", file]);
+    run("codesign", ["--verify", "--strict", file]);
+  }
   await writeMacNotices(packages);
 }
 
@@ -360,6 +377,10 @@ function combineLicenses() {
 function writeManifest(sourceManifest, files, nativeLibraries) {
   const manifest = {
     ...sourceManifest,
+    pdfium: {
+      ...sourceManifest.pdfium,
+      bundledFileSha256: sha256(path.join(runtimeDir, "pdfium", sourceManifest.pdfium.file)),
+    },
     runtimeLibraries: nativeLibraries,
     totalBytes: files.reduce((total, file) => total + file.bytes, 0),
     files,
@@ -383,6 +404,9 @@ if (!existsSync(pdfiumPath)) {
     + "If this checkout is dedicated to the current target, recover from the repository root with "
     + "`npm run desktop:clean:runtime` followed by `npm run desktop:prepare`. Use a separate checkout for other targets.",
   );
+}
+if (!hasVerifiedPdfium(runtimeDir, sourceManifest)) {
+  throw new Error("PDFium integrity check failed before runtime relocation. Clean and prepare this target's runtime before rebuilding.");
 }
 if (!sourceManifest.tessdata?.commits?.fast || !sourceManifest.tessdata?.commits?.best) {
   throw new Error(

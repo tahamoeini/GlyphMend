@@ -1,0 +1,117 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { hasVerifiedPdfium, sha256 } from "./runtime-integrity.mjs";
+import { collectMacDependencyGraph } from "./macos-dependencies.mjs";
+
+function fixture(t) {
+  const root = mkdtempSync(path.join(os.tmpdir(), "glyphmend-packaging-"));
+  t.after(() => {
+    if (path.dirname(path.resolve(root)) !== path.resolve(os.tmpdir())
+      || !path.basename(root).startsWith("glyphmend-packaging-")) throw new Error("Unsafe fixture cleanup path");
+    rmSync(root, { recursive: true, force: true });
+  });
+  const put = (relative, contents = "fixture") => {
+    const file = path.join(root, relative);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, contents);
+    return file;
+  };
+  return { root, put };
+}
+
+function pdfiumFixture(t, relocated = false) {
+  const { root, put } = fixture(t);
+  const library = put("pdfium/libpdfium.so", "verified upstream bytes");
+  const source = { target: "x86_64-unknown-linux-gnu", pdfium: {
+    file: "libpdfium.so", archiveSha256: "pinned-archive", fileSha256: sha256(library),
+  } };
+  const sourceFile = put("runtime-source-manifest.json", JSON.stringify(source));
+  if (relocated) put("pdfium/libpdfium.so", "relocated bytes");
+  const assembled = { ...source, pdfium: { ...source.pdfium, bundledFileSha256: sha256(library) }, files: [
+    { path: "pdfium/libpdfium.so", sha256: sha256(library) },
+    { path: "runtime-source-manifest.json", sha256: sha256(sourceFile) },
+  ] };
+  const save = () => put("runtime-manifest.json", JSON.stringify(assembled));
+  save();
+  return { root, put, source, assembled, save };
+}
+
+test("accepts verified upstream PDFium before relocation", (t) => {
+  const { root, source } = pdfiumFixture(t);
+  assert.equal(hasVerifiedPdfium(root, source), true);
+});
+
+test("accepts relocated PDFium without changing upstream provenance", (t) => {
+  const { root, source, assembled } = pdfiumFixture(t, true);
+  assert.notEqual(source.pdfium.fileSha256, assembled.pdfium.bundledFileSha256);
+  assert.equal(hasVerifiedPdfium(root, source), true);
+});
+
+test("rejects corrupted packaged PDFium and a missing assembly manifest", (t) => {
+  const { root, put, source } = pdfiumFixture(t, true);
+  put("pdfium/libpdfium.so", "corrupted bytes");
+  assert.equal(hasVerifiedPdfium(root, source), false);
+  rmSync(path.join(root, "runtime-manifest.json"));
+  assert.equal(hasVerifiedPdfium(root, source), false);
+});
+
+test("rejects mismatched assembly target, upstream provenance, and source manifest", (t) => {
+  const { root, put, source, assembled, save } = pdfiumFixture(t, true);
+  assembled.target = "other-target";
+  save();
+  assert.equal(hasVerifiedPdfium(root, source), false);
+  assembled.target = source.target;
+  assembled.pdfium.archiveSha256 = "different-archive";
+  save();
+  assert.equal(hasVerifiedPdfium(root, source), false);
+  assembled.pdfium.archiveSha256 = source.pdfium.archiveSha256;
+  save();
+  put("runtime-source-manifest.json", "changed source manifest");
+  assert.equal(hasVerifiedPdfium(root, source), false);
+});
+
+test("collects macOS direct and recursive dependencies, including libarchive, with cycles and rpaths", (t) => {
+  const { root, put } = fixture(t);
+  const executable = put("bin/glyphmend");
+  const pdfium = put("runtime/pdfium/libpdfium.dylib");
+  const tesseract = put("Cellar/tesseract/5/lib/libtesseract.dylib");
+  const archive = put("Cellar/libarchive/3/lib/libarchive.13.dylib");
+  const lept = put("Cellar/leptonica/1/lib/liblept.dylib");
+  const inspections = new Map([
+    [executable, { dependencies: [tesseract, archive, "/usr/lib/libSystem.B.dylib"], rpaths: [] }],
+    [pdfium, { dependencies: ["/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"], rpaths: [] }],
+    [tesseract, { dependencies: ["@rpath/liblept.dylib"], rpaths: [path.dirname(lept)] }],
+    [archive, { dependencies: [archive, tesseract], rpaths: [] }],
+    [lept, { dependencies: [archive], rpaths: [] }],
+  ]);
+  const graph = collectMacDependencyGraph({ executable, pdfium, cellar: path.join(root, "Cellar"),
+    inspect: (file) => inspections.get(file) });
+  assert.equal(graph.libraries.size, 3);
+  assert.deepEqual([...graph.packages].sort(), ["leptonica", "libarchive", "tesseract"]);
+});
+
+test("fails unresolved macOS dependencies instead of producing an incomplete installer", (t) => {
+  const { root, put } = fixture(t);
+  const executable = put("bin/glyphmend");
+  const pdfium = put("runtime/pdfium/libpdfium.dylib");
+  mkdirSync(path.join(root, "Cellar"));
+  assert.throws(() => collectMacDependencyGraph({ executable, pdfium, cellar: path.join(root, "Cellar"),
+    inspect: () => ({ dependencies: ["@rpath/missing.dylib"], rpaths: [] }) }), /Cannot resolve/);
+});
+
+test("checksums the installer and SBOM using filenames unique to each platform", (t) => {
+  const { root, put } = fixture(t);
+  const installer = put("release/App.deb", "installer bytes");
+  const sbom = put("release/SBOM.json", "SBOM bytes");
+  put("release/SHA256SUMS-old.txt", "old checksums");
+  const script = fileURLToPath(new URL("./write-release-checksums.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [script, path.join(root, "release"), "SHA256SUMS-linux.txt"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(path.join(root, "release/SHA256SUMS-linux.txt"), "utf8"),
+    `${sha256(installer)}  App.deb\n${sha256(sbom)}  SBOM.json\n`);
+});

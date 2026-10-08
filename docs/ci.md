@@ -41,11 +41,13 @@ Use Node.js 22 and run npm commands from the repository root. The root `package.
 
 The Desktop development command uses `devUrl` at `http://127.0.0.1:1420`. Tauri's `beforeDevCommand` starts the shared Vite app in desktop mode. Installer builds continue to use the bundled production frontend. The dev launcher also applies Tauri's optional WebKit compositor workaround only for WSL sessions. See the [Desktop guide](desktop.md) for native prerequisites, runtime recovery, and the reported WSL2 blank-window issue.
 
-Release package jobs set `TARGET` to the matrix Rust triple. The Tauri launcher forwards that value to `tauri build --target` unless a target is already supplied, so the executable, runtime assembly, and installer all use `companion/target/<triple>/release`.
+Release package jobs set `TARGET` to the matrix Rust triple. The Tauri launcher forwards that value to `tauri build --target` unless a target is already supplied; local builds use the prepared source manifest's target when `TARGET` is absent. The launcher rejects conflicting explicit and environment targets and passes the selected target to the build hooks. The executable, runtime assembly, and installer therefore all use `companion/target/<triple>/release`.
+
+Runtime validation preserves the checksum-verified upstream PDFium digest separately from its relocated bundle digest. Both the prepared resources and the installed or extracted resources are checked. macOS packaging walks actual Mach-O dependencies recursively, includes their Homebrew license provenance, and ad hoc signs relocated libraries. Both macOS matrix entries set `MACOSX_DEPLOYMENT_TARGET=15.0`, matching the application's macOS 15 minimum and the runner's Homebrew bottles. Supporting earlier macOS releases requires rebuilding the native dependency chain for that deployment target.
 
 ## Manual full validation
 
-The `full` mode runs the Rust quality and host compilation checks alongside the retained browser tests, Rust workspace tests, browser-to-Companion runtime integration, Tauri adapter tests, Tauri service and bounded-IPC tests, and native target compilation. Run it manually when a change needs broad validation. The four-platform job builds the native host without producing installers.
+The `full` mode runs the Rust quality and host compilation checks alongside the retained browser tests, focused packaging integrity/dependency regression tests, Rust workspace tests, browser-to-Companion runtime integration, Tauri adapter tests, Tauri service and bounded-IPC tests, and native target compilation. Run it manually when a change needs broad validation. The four-platform job builds the native host without producing installers.
 
 The `benchmark` mode runs the paired six-document corpus with the selected number of repetitions and OCR model, then uploads raw and evaluated evidence. Its runner performs browser license, lint, typecheck, test, and production-build preflight checks before measuring. A benchmark is measurement evidence, not a product performance claim. Stable Rust-provider promotion requires the checked-in promotion gate and browser regression evidence for every corpus class.
 
@@ -77,6 +79,8 @@ Use commit subjects in the form `<type>(optional-scope)!: summary`. For example,
 The browser artifact includes the static site, license text, generated dependency report, third-party notices, checksum, SPDX SBOM, and provenance. Before SBOM generation, the release workflow synchronizes the calculated version across the root manifest, browser manifest, and root lockfile. Desktop jobs produce Windows x64 NSIS, Ubuntu 24.04 x64 `.deb`, macOS Intel `.dmg`, and Apple silicon `.dmg` packages with the same version. Each Desktop job inspects the packaged resources and runs digital-text plus raster-OCR extraction smoke checks against those packaged resources. One unsigned draft prerelease is created only after every package job succeeds; it is not published automatically.
 
 Stable distribution still requires Windows code signing, macOS signing and notarization, and clean-machine install and upgrade validation. Windows installation may need network access to obtain WebView2 when it is absent. See [distribution status](distribution-plan.md).
+
+Checksum files use unique names (`SHA256SUMS-browser.txt` and `SHA256SUMS-<platform>.txt`) so all assets can be attached to one release without filename collisions. Each file checksums that distribution's archive or installer and SPDX SBOM using their release filenames, with no build-directory prefix. Download those assets together and run `sha256sum --check SHA256SUMS-<platform>.txt` on Linux or `shasum -a 256 --check SHA256SUMS-<platform>.txt` on macOS.
 
 ## Updating dependencies and runtime data
 

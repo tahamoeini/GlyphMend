@@ -20,8 +20,8 @@ The CLI source in the Rust workspace remains for development and benchmark tooli
 | --- | --- | --- | --- |
 | Windows x64 | NSIS setup `.exe` | Windows x64 | WebView2 bootstrapper; Tesseract/Leptonica use the static `x64-windows-static-md` triplet. PDFium and OCR models are bundled. |
 | Ubuntu 24.04 x64 | `.deb` | Ubuntu 24.04 x64 | WebKitGTK 4.1 and GTK runtime packages are installer dependencies; the native OCR libraries and models are bundled. |
-| macOS Intel | `.dmg` | macOS 15 Intel | Unsigned; app and bundled libraries are checked against the configured macOS 12.0 minimum. Clean-install compatibility still needs validation. |
-| macOS Apple silicon | `.dmg` | macOS 15 Apple silicon | Unsigned; app and bundled libraries are checked against the configured macOS 12.0 minimum. Clean-install compatibility still needs validation. |
+| macOS Intel | `.dmg` | macOS 15 Intel | Requires macOS 15 or later. No Developer ID signature or notarization; relocated libraries receive ad hoc signatures. Clean-install compatibility still needs validation. |
+| macOS Apple silicon | `.dmg` | macOS 15 Apple silicon | Requires macOS 15 or later. No Developer ID signature or notarization; relocated libraries receive ad hoc signatures. Clean-install compatibility still needs validation. |
 
 These are configured build targets, not a clean-install support guarantee. There is no cross-platform installer. AppImage and Linux ARM are not initial targets.
 
@@ -50,6 +50,8 @@ The target-specific resource tree includes:
 `prepare-runtime.mjs` downloads only pinned sources and verifies the PDFium archive and model revisions. The bundle step assembles host-native OCR libraries, writes the final manifest, and fails when required files, notices, or checksums are missing. Packaged-runtime release smoke checks run digital-text and raster-OCR extraction against the files staged from each platform installer.
 
 Runtime paths are derived from the app resource directory, not the current working directory. `npm run desktop:prepare` reuses resources only when their target manifest and pinned file checksums match the current OS/architecture. If the manifest names another target, use a separate checkout for that OS; do not clean the other target's resources. If resources are incomplete or stale in a checkout dedicated to the current target, recover from the repository root with `npm run desktop:clean:runtime` followed by `npm run desktop:prepare`. The cleaner removes only recognized generated entries and refuses unknown contents.
+
+Packaging relocates native libraries so installers do not depend on the build machine's library paths. The source manifest preserves PDFium's digest from the checksum-verified upstream archive; the assembled manifest separately records `pdfium.bundledFileSha256` after relocation and macOS ad hoc signing. Preparation accepts an assembled library only when its bundle digest and source provenance match, so a subsequent build can reuse verified resources without treating relocation as corruption. Validation checks both manifests and the actual installed or extracted runtime. macOS dependencies are collected recursively from the executable and PDFium's Mach-O references, including versioned Homebrew aliases, and every bundled library is checked for architecture, deployment minimum, and signature. The current Homebrew bottles come from macOS 15 runners; these packages do not claim macOS 12 compatibility.
 
 ## Local development
 
