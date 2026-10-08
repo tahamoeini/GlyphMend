@@ -41,6 +41,8 @@ Use Node.js 22 and run npm commands from the repository root. The root `package.
 
 The Desktop development command uses `devUrl` at `http://127.0.0.1:1420`. Tauri's `beforeDevCommand` starts the shared Vite app in desktop mode. Installer builds continue to use the bundled production frontend. The dev launcher also applies Tauri's optional WebKit compositor workaround only for WSL sessions. See the [Desktop guide](desktop.md) for native prerequisites, runtime recovery, and the reported WSL2 blank-window issue.
 
+Release package jobs set `TARGET` to the matrix Rust triple. The Tauri launcher forwards that value to `tauri build --target` unless a target is already supplied, so the executable, runtime assembly, and installer all use `companion/target/<triple>/release`.
+
 ## Manual full validation
 
 The `full` mode runs the Rust quality and host compilation checks alongside the retained browser tests, Rust workspace tests, browser-to-Companion runtime integration, Tauri adapter tests, Tauri service and bounded-IPC tests, and native target compilation. Run it manually when a change needs broad validation. The four-platform job builds the native host without producing installers.

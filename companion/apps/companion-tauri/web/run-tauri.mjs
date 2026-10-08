@@ -34,6 +34,17 @@ if (!tauriCliEntry || (nativeCliPackage && !nativeCliAvailable)) {
 }
 
 const tauriArgs = process.argv.slice(2);
+const requestedTarget = process.env.TARGET?.trim();
+if (
+  requestedTarget
+  && (tauriArgs[0] === "build" || tauriArgs[0] === "bundle")
+  && !tauriArgs.some((arg) => arg === "--target" || arg.startsWith("--target=") || arg === "-t")
+) {
+  const separatorIndex = tauriArgs.indexOf("--");
+  const insertIndex = separatorIndex === -1 ? tauriArgs.length : separatorIndex;
+  tauriArgs.splice(insertIndex, 0, "--target", requestedTarget);
+  console.log(`[tauri] Forwarding TARGET=${requestedTarget} to the Tauri CLI.`);
+}
 const tauriEnvironment = { ...process.env };
 if (isWslWindowsMount) {
   console.warn(
