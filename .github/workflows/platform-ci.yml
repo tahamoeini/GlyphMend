@@ -177,6 +177,8 @@ jobs:
     name: Desktop tests (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    env:
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -380,7 +382,9 @@ jobs:
           VERSION: ${{ needs.release-version.outputs.version }}
         run: |
           set -euo pipefail
-          staging="release/GlyphMend-${VERSION}-browser"
+          staging_root="$RUNNER_TEMP/glyphmend-browser-stage"
+          staging="$staging_root/GlyphMend-${VERSION}-browser"
+          mkdir -p release
           mkdir -p "$staging/site"
           cp -R web-app/dist/. "$staging/site/"
           cp web-app/LICENSE "$staging/"
@@ -388,7 +392,7 @@ jobs:
           node web-app/scripts/collect-third-party-notices.mjs "$staging/THIRD_PARTY_NOTICES"
           printf 'GlyphMend %s browser distribution\n' "$VERSION" > "$staging/VERSION.txt"
           archive="release/GlyphMend-${VERSION}-browser.tar.gz"
-          tar -czf "$archive" -C release "GlyphMend-${VERSION}-browser"
+          tar -czf "$archive" -C "$staging_root" "GlyphMend-${VERSION}-browser"
       - name: Generate the browser distribution SBOM
         run: npm sbom --workspace glyphmend-browser --sbom-format spdx --omit=dev > release/SBOM-browser.spdx.json
       - name: Checksum the browser archive and SBOM
@@ -646,6 +650,14 @@ jobs:
             echo 'No product release assets were downloaded.' >&2
             exit 1
           fi
+          duplicates=$(printf '%s\n' "${assets[@]##*/}" | sort | uniq -d)
+          if [[ -n "$duplicates" ]]; then
+            echo "Release assets have duplicate filenames: $duplicates" >&2
+            exit 1
+          fi
+          while IFS= read -r -d '' checksum; do
+            (cd "$(dirname "$checksum")" && sha256sum --check "$(basename "$checksum")")
+          done < <(find release-assets -type f -name 'SHA256SUMS-*.txt' -print0)
           gh release create "$tag" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \

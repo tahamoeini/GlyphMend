@@ -13,7 +13,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { hasVerifiedPdfium, sha256 } from "./runtime-integrity.mjs";
-import { collectMacDependencyGraph } from "./macos-dependencies.mjs";
+import { collectMacDependencyGraph, parseOtoolDependencies } from "./macos-dependencies.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDir, "../../../../..");
@@ -22,9 +22,9 @@ const runtimeLibDir = path.join(runtimeDir, "lib");
 const sourceManifestPath = path.join(runtimeDir, "runtime-source-manifest.json");
 const spdxTextCache = new Map();
 const previousManifestPath = path.join(runtimeDir, "runtime-manifest.json");
-const previousFiles = existsSync(previousManifestPath)
-  ? JSON.parse(readFileSync(previousManifestPath, "utf8")).files || []
-  : [];
+const previousManifest = existsSync(previousManifestPath)
+  ? JSON.parse(readFileSync(previousManifestPath, "utf8")) : {};
+const previousFiles = previousManifest.files || [];
 
 function run(command, args, { allowFailure = false, encoding = "utf8" } = {}) {
   const result = spawnSync(command, args, { encoding, maxBuffer: 64 * 1024 * 1024 });
@@ -156,10 +156,7 @@ function writeLinuxNotices(files) {
 
 function otoolDependencies(file) {
   const output = run("otool", ["-L", file]).output;
-  return output.split(/\r?\n/).slice(1).flatMap((line) => {
-    const match = line.trim().match(/^(.+?)\s+\(compatibility version/);
-    return match ? [match[1]] : [];
-  });
+  return parseOtoolDependencies(file, output);
 }
 
 function versionParts(value) {
@@ -218,6 +215,7 @@ async function collectMacLibraries(executable) {
     executable,
     pdfium,
     cellar: run("brew", ["--cellar"]).output,
+    previousSources: previousManifest.runtimeLibrarySources || {},
     inspect: (file) => ({
       dependencies: otoolDependencies(file),
       rpaths: [...run("otool", ["-l", file]).output.matchAll(/\bpath\s+(.+?)\s+\(offset \d+\)/g)]
@@ -252,6 +250,7 @@ async function collectMacLibraries(executable) {
     run("codesign", ["--verify", "--strict", file]);
   }
   await writeMacNotices(packages);
+  return Object.fromEntries(libraries);
 }
 
 function addRpath(file, rpath) {
@@ -374,7 +373,7 @@ function combineLicenses() {
   writeFileSync(path.join(noticesDir, "LICENSES.txt"), sections.join("\n"));
 }
 
-function writeManifest(sourceManifest, files, nativeLibraries) {
+function writeManifest(sourceManifest, files, nativeLibraries, nativeSources) {
   const manifest = {
     ...sourceManifest,
     pdfium: {
@@ -382,6 +381,7 @@ function writeManifest(sourceManifest, files, nativeLibraries) {
       bundledFileSha256: sha256(path.join(runtimeDir, "pdfium", sourceManifest.pdfium.file)),
     },
     runtimeLibraries: nativeLibraries,
+    runtimeLibrarySources: nativeSources,
     totalBytes: files.reduce((total, file) => total + file.bytes, 0),
     files,
   };
@@ -421,6 +421,7 @@ const executable = path.resolve(repositoryRoot, "companion/target", target, "rel
 if (!existsSync(executable)) throw new Error(`Built Tauri executable is missing: ${executable}`);
 
 const nativeLibraries = [];
+let nativeSources = {};
 if (target.includes("linux")) {
   mkdirSync(runtimeLibDir, { recursive: true });
   const direct = lddPaths(executable).filter((file) => /lib(?:tesseract|lept)[^/]*\.so/.test(path.basename(file)));
@@ -430,12 +431,12 @@ if (target.includes("linux")) {
   collectLinuxLibraries([...direct, pdfiumPath]);
   nativeLibraries.push(...walkFiles(runtimeLibDir).map((file) => path.relative(runtimeDir, file).split(path.sep).join("/")));
 } else if (target.includes("apple-darwin")) {
-  await collectMacLibraries(executable);
+  nativeSources = await collectMacLibraries(executable);
   nativeLibraries.push(...walkFiles(runtimeLibDir).map((file) => path.relative(runtimeDir, file).split(path.sep).join("/")));
 } else {
   writeWindowsNotices();
 }
 
 combineLicenses();
-writeManifest(sourceManifest, collectRuntimeFiles(), nativeLibraries);
+writeManifest(sourceManifest, collectRuntimeFiles(), nativeLibraries, nativeSources);
 console.log(`Assembled and fingerprinted GlyphMend Desktop runtime resources for ${target}.`);
