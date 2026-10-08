@@ -1,6 +1,8 @@
 
 # GlyphMend AI Coding Agent Master Prompts
 
+> Historical prompt collection for the original reconstruction plan. Its instructions and assumptions may no longer match the repository; do not use it as current project guidance. Use the current [architecture](../docs/architecture.md), [roadmap](../docs/roadmap.md), and the user's task instructions.
+
 These are complete, copy/paste-ready prompts for implementing the extraction reconstruction plan. Run them as capability milestones, not as tiny isolated edits. Each prompt must inspect previous work, preserve independent progress, verify its result, and record unresolved work.
 
 ## Global execution contract for every prompt

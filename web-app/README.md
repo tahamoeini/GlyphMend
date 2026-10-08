@@ -21,6 +21,8 @@ For operations and troubleshooting, see the [browser guide](../docs/browser.md).
 
 ## Run and build
 
+Use Node.js 22 and npm:
+
 ```bash
 npm ci
 npm run dev

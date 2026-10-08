@@ -120,6 +120,8 @@ spacing:
   space-xl: 1.5rem
 ---
 
+> Design reference only. These tokens and screen concepts document an earlier visual exploration; they do not verify that the shipped interface implements them. See the [research index](../../README.md) and current [product roadmap](../../../docs/roadmap.md).
+
 ## Brand & Style
 
 This design system establishes an environment of serene, uncompromised utility for professional desktop document manipulation. Drawing directly from Apple Human Interface Guidelines and modern desktop ergonomics, the system prioritizes local-first document fidelity, structural clarity, and ambient calm. The visual style merges **Minimalism** and tailored **Glassmorphism**: functional frosted surfaces, ultra-fine hairline structural frames, and fluid transitions that elevate content above interface scaffolding.

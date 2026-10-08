@@ -1,4 +1,6 @@
 
+> Historical prompt plan. Its sequence, repo assumptions, and status ledger are archived context, not current instructions. See [current project documentation](../../docs/README.md) and the [roadmap](../../docs/roadmap.md).
+
 # GlyphMend — Prompt-by-Prompt Upgrade Plan for an AI Coding Agent
 
 Basis: the attached **GlyphMend Upgrade Research**.  

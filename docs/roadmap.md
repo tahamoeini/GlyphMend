@@ -1,27 +1,20 @@
-# Active roadmap
+# Roadmap and release readiness
 
-## Release readiness
+This page separates features and automation present in the repository from evidence still needed before broader distribution. Check GitHub Actions and Releases for live run and publication status.
 
-### Benchmark the two engines by document class
+## Implemented in the repository
 
-Create an independently labeled PDF benchmark set covering text-heavy, scanned English, multi-column, table, equation, and image-heavy documents. Measure OCR error, reading order, structure recovery, latency, and peak memory against browser mode. Publish the class-level results and repeat the runs before making performance or accuracy claims.
+- The Browser/PWA supports local PDF extraction, OCR, IndexedDB checkpoints, workspace import/export, review, Markdown, and DOCX.
+- The optional Rust Companion exposes a versioned loopback API. Desktop reuses its service and PDFium/Tesseract provider through Tauri IPC.
+- Browser and Rust fixtures validate the Semantic Document IR v2 contract.
+- The benchmark corpus contains six labeled synthetic PDFs, with paired-run tooling and a stable-promotion gate.
+- Manual CI and package workflows exist for the browser, Companion, benchmarks, and four Desktop targets.
 
-### Preserve browser-only behavior
+## Validation still required
 
-Run the browser extraction, storage, OCR, export, and production-build checks without connecting the Companion. Keep fallback behavior covered for connection denial, unsupported loopback access, Companion failure, and offline operation.
+1. **Paired benchmark evidence.** The checked-in benchmark results currently contain browser-only runs, not paired browser/Companion evidence. Stable Companion promotion requires the benchmark gate to pass on repeated paired runs and browser regression evidence for each document class.
+2. **Packaged Desktop lifecycle.** Native workflows build and inspect packages and run native extraction smoke tests. A full installed-WebView check is still needed for launch, worker/WASM startup, offline reload, checkpoint recovery after restart, and upgrade.
+3. **Stable Desktop signing.** Windows signing and macOS signing/notarization must be configured and tested before stable direct distribution.
+4. **Revision-specific CI evidence.** Workflows are manual. A workflow file or a local build does not establish that the current revision passed the hosted workflow.
 
-### Verify cross-runtime IR
-
-Maintain versioned Semantic Document IR v2 fixtures consumed by Rust and the browser. Reject invalid or oversized output before it reaches checkpoints or exports.
-
-### Publish unsigned portable prerelease packages
-
-Build six portable packages on GitHub-hosted Windows, macOS, and Linux runners without paid signing credentials. Mark packages and release notes as unsigned, include executables, PDFium and Tesseract runtime files, English Fast and Best models, notices, checksums, an SBOM, and provenance. Document expected Windows SmartScreen and macOS Gatekeeper warnings.
-
-### Complete Desktop release validation
-
-Run the native Windows x64, Ubuntu 24.04 x64, macOS Intel, and Apple silicon jobs. Measure full installer sizes and validate clean installs, paths with spaces, resource lookup, signed/runtime dependencies, and OCR languages. Test the installed WebView offline with workers, WASM, checkpoints, logs, restart, and upgrade. Configure signing and notarization before stable distribution.
-
-### Promote only measured releases
-
-Publish the first Companion version as a prerelease. Promote it to stable only after repeatable benchmark improvements are documented for specific document classes and browser-only behavior has no regression.
+Do not make engine speed or accuracy claims until repeated, class-specific benchmark results support them. See [distribution status](distribution-plan.md), [CI/CD](ci.md), and the [benchmark guide](../companion/benchmarks/README.md).

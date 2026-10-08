@@ -1,5 +1,7 @@
 # GlyphMend Upgrade Research: Editable Figures, Mathematical OCR, Native Word Equations, and Apple Liquid Glass
 
+> Historical research snapshot. Product recommendations, platform details, and external citations may be stale; verify current facts against primary sources before reuse. See [current project documentation](../../docs/README.md).
+
 ## Executive assessment
 
 GlyphMend already has the right architectural philosophy for this upgrade: **Markdown is the canonical artifact, extraction is local-first, uncertain structure is preserved rather than invented, and DOCX is a downstream representation rather than a second extraction pipeline**. The current browser edition already uses MuPDF WebAssembly, PDF.js, Tesseract.js, Web Workers, IndexedDB, a service worker/PWA, source-visual preservation, and browser-side DOCX generation. It also already converts some simple vector box/connector diagrams to Mermaid and recognized equations to native Word Office Math. fileciteturn19file0L2-L2 fileciteturn20file0L2-L2

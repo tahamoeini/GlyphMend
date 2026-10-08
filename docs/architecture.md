@@ -2,55 +2,58 @@
 
 ## Product boundary
 
-The Browser/PWA is complete without a native runtime. It owns PDF intake, resumable workspace storage, extraction settings, review, Semantic Document IR v2 validation, and Markdown/DOCX exports. Users can add the standalone Rust Companion for one job or install GlyphMend Desktop, which bundles the same Rust engine in the app process. Each engine returns the same versioned IR, including engine/version metadata and per-page fallback details.
+GlyphMend has three local processing modes:
 
-The browser can complete an extraction without a Companion. Connection denial, unsupported APIs, an unavailable Companion, or a failed Companion job falls back to the browser engine unless the user cancelled the job.
+- **Browser/PWA:** the complete default product. It opens PDFs in the browser, extracts pages in a worker, stores resumable workspace data in IndexedDB, and exports Markdown and DOCX.
+- **Browser + Companion:** the browser remains the interface. After the user pairs the optional local Companion and selects it for a job, it sends that job's PDF bytes to the Companion's loopback API.
+- **GlyphMend Desktop:** a Tauri host that bundles the Rust service and calls it over registered IPC commands. It does not start the Companion HTTP server.
+
+All engines return the versioned Semantic Document IR v2. The browser validates results and owns the shared review, checkpoint, Markdown, and DOCX paths. A Companion failure falls back to browser extraction for the current uncommitted batch; cancellation does not start fallback work.
 
 ## Data flow
 
-```text
-PDF bytes in browser
-  → selected engine for this job
-      ├─ Browser/PWA: MuPDF WASM + browser OCR
-      ├─ Browser + Companion: loopback API → PDFium + multilingual Tesseract OCR
-      └─ GlyphMend Desktop: Tauri IPC → PDFium + multilingual Tesseract OCR
-  → validate Semantic Document IR v2
-  → browser checkpoint and review state
-  → shared Markdown renderer
-  → shared DOCX exporter
-```
+~~~text
+PDF selected in Browser/PWA or Desktop
+  -> selected engine for this job
+      -> Browser/PWA: MuPDF WebAssembly and bundled browser OCR
+      -> Browser + Companion: loopback API, PDFium, Tesseract
+      -> Desktop: Tauri IPC, PDFium, Tesseract
+  -> validate Semantic Document IR v2
+  -> checkpoint in browser storage
+  -> review and source comparison
+  -> shared Markdown and DOCX exporters
+~~~
 
-For Browser + Companion, the user connects the loopback Companion and chooses it for a job; the browser sends the PDF bytes only for that job. The API rejects paths and remote URLs. Desktop sends bounded chunks through registered IPC commands and does not open a local HTTP listener. Raggi remains a separate product; any future document exchange uses the versioned Semantic Document IR import/export boundary.
+Browser + Companion transfers PDF bytes only after user-initiated pairing and engine selection. The Companion rejects filesystem paths and remote URLs. Desktop transfers bounded chunks through registered Tauri commands and has no local HTTP listener.
 
-## Top-level layout
+## State and persistence
 
-```text
-branding.json              Product identity and browser configuration
+Browser and Desktop use the same frontend persistence code, but their browser profiles are separate. Workspace checkpoints and preferences are stored in the profile's IndexedDB/local storage; Desktop WebView data is kept in the per-user application data directories configured by Tauri. There is no automatic database bridge between a browser profile and Desktop. Users can export a checkpoint and import it into another profile.
+
+The PWA service worker is included in the browser build and omitted from Desktop. Browser and Desktop builds use separate entry points and engine adapters.
+
+## Repository layout
+
+~~~text
+branding.json              Canonical product identity
 brand/                     Source brand assets
-web-app/                   Complete browser platform and exports
-companion/                 Rust service, loopback API, Tauri host, PDF extraction, schemas
+web-app/                   Browser/PWA, shared interface, storage, and exporters
+companion/                 Rust workspace, protocol schemas, benchmarks, and Tauri host
 docs/                      Current product and operations documentation
-docs/archive/              Historical upgrade and roadmap records
-research/archive/          Archived research
-.github/workflows/         Browser CI, Companion CI, and manual Companion release
-```
+docs/archive/              Historical implementation records
+research/                  Research plans and design references
+.github/workflows/         Manually dispatched CI, benchmark, and release workflows
+~~~
 
-## Browser platform
+## Verification workflows
 
-`web-app/src/app.js` owns the interface and job orchestration. Browser extraction runs in bounded page batches, commits completed pages to IndexedDB, and uses the shared Semantic Document IR v2 validation and export path. The browser engine remains usable offline after the application and its bundled OCR runtime are available.
+Every workflow currently uses workflow_dispatch; none is configured to run on pushes, pull requests, or tags.
 
-## Rust Companion
+- **web-app.yml:** browser license checks, dependency audit, lint, typecheck, tests, production build, and artifact upload.
+- **companion.yml:** Rust checks, dependency policy, and browser-to-Companion runtime integration.
+- **companion-tauri.yml:** native Desktop CI across Windows, Ubuntu, macOS Intel, and Apple silicon.
+- **companion-benchmarks.yml:** paired browser/Companion benchmark runs.
+- **companion-release.yml:** unsigned standalone Companion packages and GitHub Release publication.
+- **glyphmend-desktop-release.yml:** unsigned Desktop installers and a draft prerelease.
 
-The Rust workspace contains the loopback bridge, bounded job service, shared protocol contracts, and portable executable. PDFium calls are serialized through the thread-safe binding. OCR and semantic work are bounded and can run concurrently. The Companion release packages bundle Fast and Best Tesseract data for English, Russian, Persian, and Simplified Chinese.
-
-The connection is user initiated and bound to an exact web origin and a one-use pairing code. Endpoints are loopback-only, session authenticated, size limited, and time bounded. See [the Companion API guide](companion-engine.md).
-
-## Checks and releases
-
-- `web-app.yml`: browser tests, static build, and dependency checks.
-- `companion.yml`: Rust checks and browser-to-Companion contract checks.
-- `companion-tauri.yml`: native Desktop CI across Windows, Ubuntu, macOS Intel, and Apple silicon.
-- `companion-release.yml`: manual, versioned unsigned portable Companion packages.
-- `glyphmend-desktop-release.yml`: native unsigned Desktop packages and a draft-only prerelease workflow.
-
-The first Companion publication is an explicitly unsigned prerelease. The workflow builds all six platform/architecture packages without paid signing credentials. Benchmark and licensing decisions remain visible in the [roadmap](roadmap.md).
+Workflow definitions describe intended checks; inspect the Actions run for evidence that a specific revision passed. See [CI/CD and releases](ci.md) and [distribution status](distribution-plan.md).

@@ -1,69 +1,73 @@
-# CI and releases
+# CI/CD and releases
+
+## Workflow model
+
+All workflows in .github/workflows/ are started manually with workflow_dispatch. Pushes, pull requests, and tag creation do not trigger CI/CD. Start the relevant workflow from the GitHub Actions tab when you need hosted evidence.
+
+| Workflow | Purpose |
+| --- | --- |
+| web-app.yml | Browser dependency-license check, production dependency audit, lint, typecheck, tests, production build, and build artifact. |
+| companion.yml | Rust formatting, Clippy, tests, CLI build, browser-to-Companion integration, and Rust dependency policy. |
+| companion-tauri.yml | Browser and Desktop frontend checks, bounded IPC checks, Rust checks, and native host builds on four runner/architecture combinations. |
+| companion-benchmarks.yml | Paired browser/Companion measurements for the six-document benchmark corpus. |
+| companion-release.yml | Unsigned standalone Companion packages and GitHub Release publication. |
+| glyphmend-desktop-release.yml | Unsigned Desktop installer packages and a tagged draft prerelease. |
+
+A workflow definition is not evidence of a successful run. Review the run for the revision being released and retain its artifacts and logs as appropriate.
 
 ## Browser checks
 
-From `web-app/`:
+Use Node.js 22 and run from web-app/:
 
-```bash
+~~~bash
 npm ci
 npm run license:check
 npm run lint
 npm run typecheck
 npm test
 npm run build
-```
+npm run preview
+~~~
 
-`.github/workflows/web-app.yml` runs these checks and verifies that browser output contains no Tauri API dependency. The Browser/PWA remains the standalone default.
-
-Every repository GitHub Actions workflow is started with `workflow_dispatch`. Pushes, pull requests, and tag creation do not start CI/CD automatically; choose a workflow under the Actions tab when you want to run it.
+npm run build synchronizes generated branding, checks browser-only build boundaries, verifies the copied MuPDF files, and creates dist/. npm run preview serves that production build locally. Deploying dist/ is separate from this repository's workflow.
 
 ## Rust Companion checks
 
-From `companion/`:
+Use the Rust toolchain pinned in companion/rust-toolchain.toml (currently 1.97.0), Tesseract/Leptonica development libraries, and cargo-deny. Run from companion/:
 
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-```
+~~~bash
+cargo fmt --check -p companion-contract -p companion-core -p companion-extractor -p companion-service -p companion-bridge -p companion-cli
+cargo clippy --workspace --exclude companion-tauri -- -D warnings
+cargo test --workspace --exclude companion-tauri
+cargo build --locked -p companion-cli
+cargo deny check
+node tests/browser-runtime-e2e.mjs
+~~~
 
-The Rust workspace's default members exclude the experimental Tauri host; run the Desktop workflow or its target-specific checks to validate that crate. OCR development builds require Tesseract and Leptonica development libraries.
+These commands match the Companion workflow's native-crate boundary. The Tauri crate has separate OS-specific prerequisites and is checked by the Desktop workflow.
 
-## Desktop CI and native runtime smoke tests
+## Desktop development and CI
 
-`.github/workflows/companion-tauri.yml` runs manually for Windows x64, Ubuntu 24.04 x64, macOS Intel, and Apple silicon. It builds both web adapters, checks the Tauri IPC adapter, runs Rust tests, and builds the host without packaging. The Tauri IPC assembly enforces a 64 KiB part limit, 1 MiB input limit, and a cap on incomplete buffered chunks.
+The Desktop CI workflow builds both web adapters, checks the IPC adapter, runs Rust checks, and builds the native host on Windows x64, Ubuntu 24.04 x64, macOS Intel, and Apple silicon. It does not create installers.
 
-The Desktop prerelease workflow runs only when manually dispatched from the default branch with a version. It builds on the same native hosts with the prepared runtime and smoke-tests digital PDF text plus an image-only PDF page through the shared Rust job service and OCR provider. The extraction smoke test resolves the bundled runtime from a temporary path containing spaces; the Windows installer inspection also uses an install path containing spaces. It checks that the pinned PDFium library, OCR models, notices, and runtime manifest are present, and generates a native runtime SBOM and checksums.
+For local setup, install the target OS's Tauri/WebView and Tesseract/Leptonica development prerequisites, then follow the [Desktop guide](desktop.md). Its resource-preparation command downloads the pinned PDFium runtime and OCR models; normal browser builds do not need those files.
 
-For a local frontend/IPC check, from `web-app/` and the Tauri web folder:
+The Desktop release workflow additionally prepares and validates bundled resources, runs native extraction smoke tests, packages the installer, inspects package contents, and creates checksums and an SPDX SBOM. It does not exercise the full installed WebView lifecycle.
 
-```bash
-cd web-app
-npm ci
-npm run build
-npm run build:desktop
+## Dependency and extraction upgrades
 
-cd ../companion/apps/companion-tauri/web
-npm ci
-node --test src/tauri-adapter.test.mjs
-```
+- **Browser packages:** update web-app/package.json and package-lock.json together. Re-run the browser license check and all browser workflow checks.
+- **Rust crates:** update the relevant Cargo.toml and Cargo.lock; keep the pinned toolchain intentional and run cargo deny check.
+- **PDFium and OCR models:** the Desktop runtime preparation script is the pin/hash source of truth. Update its pins deliberately and regenerate the notices and runtime manifests with the package workflow.
+- **Extraction behavior:** when changing extraction semantics or cached result compatibility, review EXTRACTION_VERSION and checkpoint invalidation in web-app/src/app.js. Do not bump it for unrelated UI changes.
+- **Branding:** edit root branding.json and source assets, then use npm run brand:sync (the browser lifecycle scripts run it automatically).
 
-For the app host, install native Tauri and Tesseract/Leptonica prerequisites for the current OS, prepare resources, then run `npm run tauri -- dev`. The [Desktop guide](desktop.md) documents the target layout and runtime preparation.
+## Companion release
 
-## GlyphMend Desktop prerelease
+Manually dispatch companion-release.yml from the default branch and provide a SemVer value without the companion-v prefix, such as 0.1.0-beta.1. The workflow builds six unsigned portable packages and publishes a GitHub Release after all jobs succeed. A stable version without a prerelease suffix must pass companion/benchmarks/check-stable-promotion.mjs against companion/benchmarks/results/stable-promotion.json.
 
-`.github/workflows/glyphmend-desktop-release.yml` is manually dispatched from the default branch with a prerelease version of the form `X.Y.Z-beta.N`. It builds four distinct installers: Windows x64 NSIS `.exe`, Ubuntu 24.04 x64 `.deb`, macOS Intel `.dmg`, and macOS Apple silicon `.dmg`. It validates runtime resources and notices, fingerprints every resource file, and adds SHA-256 checksums and an SPDX SBOM.
+## Desktop prerelease
 
-After every native package job succeeds, the manually started workflow creates a `glyphmend-vX.Y.Z-beta.N` tag and an unsigned **draft prerelease**. Drafts are not public until published. Do not dispatch the release workflow unless creating that tag and draft release is intended. Stable direct distribution requires configured Windows signing and macOS signing/notarization.
+Manually dispatch glyphmend-desktop-release.yml from the default branch with a beta version such as 0.1.0-beta.1. It builds four unsigned installers, tags the source with the glyphmend-v prefix followed by that version, and creates a draft prerelease after every package job succeeds. The draft remains unpublished until a maintainer publishes it. Do not dispatch this workflow unless creating the tag and draft is intended.
 
-The standard Windows installer uses a WebView2 bootstrapper and may need network access if WebView2 is missing. The optional WebView2 offline installer adds about 127 MB and is not included. Desktop package sizes and minimum OS support still need confirmation from native release artifacts and clean-machine validation.
-
-## Standalone Companion manual release
-
-`.github/workflows/companion-release.yml` is the separate unsigned portable CLI release. It builds Windows x64/ARM64, macOS x64/ARM64, and Linux x64/ARM64 packages. Each package contains PDFium, Tesseract/Leptonica runtime files, English/Russian/Persian/Simplified Chinese Fast and Best models, notices, checksums, an SPDX SBOM, and provenance attestations.
-
-This workflow is dispatched manually from the default branch and currently publishes its Companion release when run. It is distinct from the Desktop draft-only release workflow. The Companion package workflow pins PDFium Chromium 8066 and the OCR model commits, and checks the PDFium archive hash before packaging.
-
-## Acceptance still pending
-
-Native CI and release artifacts must pass their real runners before we report supported packages and sizes. A packaged WebView test remains required for launch, WebAssembly/worker startup, offline reload, IndexedDB checkpoints/logs, restart, and upgrade behavior. The unsigned launch experience is not equivalent to a signed/notarized stable release.
+The Windows installer uses the WebView2 bootstrapper and may need network access when WebView2 is absent. Stable Desktop distribution additionally requires code signing on Windows, signing and notarization on macOS, and clean-machine validation. See [distribution status](distribution-plan.md).

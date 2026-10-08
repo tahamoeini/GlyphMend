@@ -31,6 +31,8 @@ No speed or accuracy advantage is claimed until independently labeled benchmarks
 
 ## Start the browser platform
 
+Use Node.js 22 and npm:
+
 ```bash
 cd web-app
 npm ci
@@ -53,6 +55,8 @@ The Desktop release workflow targets Windows x64 (NSIS setup), Ubuntu 24.04 x64 
 
 The standard Windows installer uses the WebView2 bootstrapper and may need an internet connection to install WebView2 on a machine without its runtime. The alternative offline WebView2 installer adds about 127 MB and is not currently bundled. After installation, GlyphMend's frontend, PDFium, Tesseract, and all supported OCR models are bundled for offline work. The Desktop guide records the package and runtime checks: [GlyphMend Desktop](docs/desktop.md).
 
+All repository GitHub Actions workflows are manually dispatched; pushes, pull requests, and tags do not run CI automatically. See [CI/CD and releases](docs/ci.md) for local checks, workflow behavior, and release gates.
+
 ## Product contract
 
 | PDF content | Output |
@@ -74,11 +78,13 @@ The browser interface is licensed under AGPL-3.0-or-later; its [license](web-app
 
 - [Browser operations](docs/browser.md)
 - [Browser application](web-app/README.md)
+- [Companion workspace](companion/README.md)
 - [Companion engine and API](docs/companion-engine.md)
 - [GlyphMend Desktop distribution](docs/desktop.md)
-- [Distribution implementation plan and audit decisions](docs/distribution-plan.md)
+- [Distribution status and release gates](docs/distribution-plan.md)
 - [Architecture and repository layout](docs/architecture.md)
-- [CI and release workflow](docs/ci.md)
+- [CI/CD and releases](docs/ci.md)
+- [Compliance and data handling](docs/compliance.md)
 - [Branding](docs/branding.md)
-- [Active roadmap](docs/roadmap.md)
+- [Roadmap and release readiness](docs/roadmap.md)
 - [Documentation index](docs/README.md)

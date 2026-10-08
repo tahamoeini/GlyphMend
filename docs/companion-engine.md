@@ -56,6 +56,8 @@ Run `.github/workflows/companion-release.yml` manually from the repository's def
 
 The first release is a prerelease. Stable promotion requires repeatable, independently measured improvements by document class and no browser-only regression.
 
+The standalone Companion has no in-app update mechanism. Users obtain a newer published package from the Releases page and start it using the included platform launch script. Browser workspace checkpoints remain in the browser profile; replacing the Companion does not move or migrate those checkpoints.
+
 ## Local verification and benchmark fixtures
 
 From the repository root, run `node companion/benchmarks/generate-corpus.mjs` to rebuild the six synthetic CC0 PDFs, then run `node companion/benchmarks/check-corpus.mjs` to check labels and file hashes. Hand-authored gold text and structure labels are recorded before extractor output is evaluated. Benchmark reports include at least three paired browser/Companion runs per class, character and reading-order error, structure F1, latency, peak memory, tool versions, and browser-regression evidence. Stable promotion fails closed when results are missing or incomplete.

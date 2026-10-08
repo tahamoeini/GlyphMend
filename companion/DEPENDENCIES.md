@@ -2,8 +2,9 @@
 
 The Companion uses native system libraries at runtime. Release archives contain
 the platform PDFium library, Tesseract and Leptonica runtime libraries, and Fast
-and Best OCR model sets for English, Russian, Persian, and Simplified Chinese. The release workflow records resolved versions and
-SHA-256 digests in each archive.
+and Best OCR model sets for English, Russian, Persian, and Simplified Chinese.
+The release workflow records resolved versions and SHA-256 digests in each
+archive.
 
 | Component | Source / pinned line | Purpose |
 | --- | --- | --- |

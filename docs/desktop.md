@@ -2,7 +2,7 @@
 
 GlyphMend Desktop is the installable distribution of the existing local-first interface. It uses the same Rust `companion-service` and PDFium/Tesseract provider as the standalone Companion, but it calls them through Tauri IPC in the app process. Desktop does not start a loopback HTTP server. The browser engine remains available as a per-job option.
 
-## Supported release artifacts
+## Configured release targets
 
 | Platform | Artifact | Build runner | Runtime notes |
 | --- | --- | --- | --- |
@@ -13,11 +13,17 @@ GlyphMend Desktop is the installable distribution of the existing local-first in
 
 Each architecture is a separate artifact. There is no cross-platform installer. AppImage and Linux ARM are not initial Desktop targets.
 
+These are workflow targets, not a clean-install support guarantee. The package workflow inspects native contents and dependencies, but installed-app compatibility still needs clean-machine validation.
+
 ## Install and offline behavior
 
 The Windows installer uses Tauri's WebView2 bootstrapper. A machine without WebView2 may need an internet connection during installation. The current installer does not include the approximately 127 MB WebView2 offline installer. Once installed, the frontend, PDFium, Tesseract, and Fast/Best OCR data for English, Russian, Persian, and Simplified Chinese are bundled; extraction does not download models or send document content to a remote service. See Tauri's [Windows installer modes](https://v2.tauri.app/distribute/windows-installer/) for their current behavior and size tradeoffs.
 
 Windows SmartScreen and macOS Gatekeeper can warn or block these unsigned prereleases. Stable public distribution requires Windows code signing and macOS signing plus notarization. Linux packages target Ubuntu 24.04 and the linked GTK/WebKitGTK system libraries declared by the `.deb`.
+
+## Updating Desktop
+
+No in-app updater is configured. Desktop installers are produced by the manually dispatched release workflow and remain drafts until a maintainer publishes them. To update, obtain the published installer for the target operating system and follow its installer flow. Export a workspace checkpoint before upgrading if the data is important; checkpoints can be imported again through the app. The release workflow does not yet verify checkpoint recovery across an installed-app upgrade.
 
 ## Local processing and saved work
 
@@ -74,6 +80,6 @@ Do not create a release tag, publish a draft, or distribute installers as part o
 
 - [Browser operations](browser.md)
 - [Companion engine and loopback API](companion-engine.md)
-- [Distribution implementation plan and audit decisions](distribution-plan.md)
-- [CI and release workflows](ci.md)
-- [Raggi handoff boundary](architecture.md)
+- [Distribution status and release gates](distribution-plan.md)
+- [CI/CD and release workflows](ci.md)
+- [Compliance and data handling](compliance.md)

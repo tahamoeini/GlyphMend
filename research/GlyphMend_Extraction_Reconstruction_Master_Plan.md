@@ -1,7 +1,9 @@
 
 # GlyphMend Extraction Reconstruction Master Plan
 
-Status: authoritative planning reference for the post-PR #35 extraction work.
+Status: historical planning reference from the post-PR #35 extraction work. It is retained for context and is not the current implementation plan or backlog.
+
+For current behavior and outstanding work, use [the documentation index](../docs/README.md), [architecture](../docs/architecture.md), and [roadmap](../docs/roadmap.md).
 
 This document is the consolidated plan for evolving GlyphMend from a PDF text extractor into a local-first document reconstruction engine:
 

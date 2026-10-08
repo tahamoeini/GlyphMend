@@ -14,6 +14,12 @@ A deployed build can replace its runtime `branding.json` and referenced logo wit
 
 See [branding.md](branding.md) for the full configuration contract.
 
+## Browser updates and checkpoint compatibility
+
+The deployed PWA registers its service worker in auto-update mode. Publishing a new browser build is a separate deployment step; the GitHub workflow only uploads a build artifact. The development server unregisters existing service workers and related caches on localhost.
+
+The application compares saved checkpoints with its extraction version and invalidates incompatible results when extraction behavior changes. The current extraction version is 14. Export important workspace data before a release that changes extraction behavior; the exported workspace can be imported again after the update. A routine UI or dependency update does not by itself require an extraction-version bump.
+
 ## Choosing extraction settings
 
 - Keep **OCR pages without usable text** enabled for scanned documents.

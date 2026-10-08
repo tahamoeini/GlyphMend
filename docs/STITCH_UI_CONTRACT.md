@@ -1,10 +1,12 @@
-# Stitch UI contract and completion gates
+# Archived Stitch UI redesign contract and completion notes
 
-## Authority and scope
+> Historical record of an earlier redesign pass. Its baseline commits, open findings, and unchecked acceptance list describe that effort and are not the current UI status or an active task list. For current product behavior, use the [roadmap](roadmap.md) and inspect the shipped interface in web-app/.
+
+## Historical authority and scope
 
 This consolidates the owner's instructions from the UI redesign conversation.
 Baseline: main a2872946950a1b4e1e94843f8bab59339c2586c0 (PR #32 merged).
-Source of truth: `research/stitch_glyphmend_desktop_interface_design/`, including
+Historical visual references: `research/stitch_glyphmend_desktop_interface_design/`, including
 the `precision_slate_glass/DESIGN.md` guide and the HTML plus PNG in each screen folder.
 The screen layouts take priority over earlier generic Apple/liquid-glass styling.
 
