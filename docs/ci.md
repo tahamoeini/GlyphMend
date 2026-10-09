@@ -25,7 +25,7 @@ To validate installed resources, enable `release_smoke` on a release run. Smoke 
 
 ### Cost controls and early failures
 
-Every mode first validates all workflow definitions with pinned actionlint, syntax-checks the frontend/build/packaging scripts, and verifies that the compile-time OCR PDF fixture is present. Web checks precede Rust checks. Native release runners start only after version calculation, Rust checks, and browser packaging succeed. The release matrix cancels its remaining builds when one platform fails. Windows verifies copyright metadata immediately after dependency installation, before compiling Rust. No hosted run is automatically started by pushing these changes.
+Every mode first validates all workflow definitions with pinned actionlint, syntax-checks the frontend/build/packaging scripts, and verifies that the compile-time OCR PDF fixture is present. `web-app/scripts/install-actionlint.sh` installs actionlint 1.7.12 directly from its [official release](https://github.com/rhysd/actionlint/releases/tag/v1.7.12), checks the pinned Linux x86_64 archive SHA-256 before extraction, and adds the executable to the job's path. It does not use a Cargo installer for actionlint. Web checks precede Rust checks. Native release runners start only after version calculation, Rust checks, and browser packaging succeed. The release matrix cancels its remaining builds when one platform fails. Windows verifies copyright metadata immediately after dependency installation, before compiling Rust. No hosted run is automatically started by pushing these changes.
 
 ## Root npm workspace
 

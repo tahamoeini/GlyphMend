@@ -46,9 +46,8 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
-      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
-        with:
-          tool: actionlint@1.7.12
+      - name: Install checksum-pinned actionlint binary
+        run: bash web-app/scripts/install-actionlint.sh
       - name: Validate every workflow and packaging script before expensive jobs
         run: |
           actionlint -pyflakes=
