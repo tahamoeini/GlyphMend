@@ -545,6 +545,7 @@ jobs:
           "GLYPHMEND_TEST_RESOURCE_DIR=$($manifest.Directory.Parent.FullName)" >> $env:GITHUB_ENV
       - name: Smoke test the installed Windows runtime
         if: runner.os == 'Windows' && inputs.release_smoke
+        shell: pwsh
         working-directory: companion
         env:
           GLYPHMEND_RUNTIME_SMOKE: '1'
