@@ -16,6 +16,7 @@ import { hasVerifiedPdfium, sha256 } from "./runtime-integrity.mjs";
 import { collectMacDependencyGraph, parseOtoolDependencies } from "./macos-dependencies.mjs";
 import { getSpdxText } from "../../../../../web-app/scripts/spdx-license-text.mjs";
 import { isNewerMacVersion } from "./macos-package-policy.mjs";
+import { writeVcpkgNotices } from "./windows-notices.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDir, "../../../../..");
@@ -289,31 +290,10 @@ async function writeMacNotices(packages) {
 }
 
 function writeWindowsNotices() {
-  const root = process.env.VCPKG_INSTALLATION_ROOT;
-  const triplet = process.env.VCPKG_TRIPLET || "x64-windows-static-md";
-  if (!root) throw new Error("VCPKG_INSTALLATION_ROOT is required for the Windows static runtime build.");
-  const installed = path.join(root, "installed", triplet);
+  const root = process.env.VCPKG_ROOT || process.env.VCPKG_INSTALLATION_ROOT;
+  const triplet = process.env.VCPKGRS_TRIPLET || process.env.VCPKG_TRIPLET || process.env.VCPKG_DEFAULT_TRIPLET || "x64-windows-static-md";
   const noticesDir = path.join(runtimeDir, "notices/native/windows");
-  mkdirSync(noticesDir, { recursive: true });
-  const share = path.join(installed, "share");
-  if (!existsSync(share)) throw new Error(`vcpkg package metadata is missing: ${share}`);
-  const records = [];
-  for (const packageName of readdirSync(share)) {
-    const packageDir = path.join(share, packageName);
-    if (!statSync(packageDir).isDirectory()) continue;
-    const copyrightPath = path.join(packageDir, "copyright");
-    if (!existsSync(copyrightPath)) {
-      throw new Error(`Missing vcpkg copyright notice for installed package ${packageName}`);
-    }
-    const destination = path.join(noticesDir, `${packageName}.copyright`);
-    copyFileSync(copyrightPath, destination);
-    records.push({ package: packageName, notice: path.basename(destination) });
-  }
-  if (!records.some(({ package: name }) => name.startsWith("tesseract"))) {
-    throw new Error("The Windows bundle is missing the vcpkg Tesseract license notice.");
-  }
-  const listed = run("vcpkg", ["list", "--triplet", triplet], { allowFailure: true }).output;
-  writeFileSync(path.join(noticesDir, "vcpkg-packages.txt"), `${listed}\n`);
+  writeVcpkgNotices(root, triplet, noticesDir);
 }
 
 function collectRuntimeFiles() {

@@ -46,7 +46,7 @@ For direct CLI runs, PDFium must be beside the executable or discoverable as a s
 
 ## Validation and related documentation
 
-The repository's only GitHub Actions workflow runs only when manually dispatched. Its fast quick mode is test-free; browser, Rust, Tauri, and pairing integration tests are available through full validation, with benchmarks and release packaging as separate manual modes. See [CI and releases](../docs/ci.md).
+The repository's only GitHub Actions workflow runs only when manually dispatched. Its fast quick mode is test-free; browser, Rust, Tauri, and pairing integration tests are available through full validation, with benchmarks and release packaging as separate manual modes. Release skips tests by default; enable `release_smoke` for installed-package PDF/OCR checks. See [CI and releases](../docs/ci.md).
 
 - [Architecture](../docs/architecture.md)
 - [Companion API and behavior](../docs/companion-engine.md)

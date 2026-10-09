@@ -9,6 +9,7 @@ import { hasVerifiedPdfium, sha256 } from "./runtime-integrity.mjs";
 import { collectMacDependencyGraph, parseOtoolDependencies } from "./macos-dependencies.mjs";
 import { isNewerMacVersion, selectMacPackageMinimum } from "./macos-package-policy.mjs";
 import { createSpdxTextFetcher, SPDX_DATA_COMMIT } from "../../../../../web-app/scripts/spdx-license-text.mjs";
+import { readVcpkgNotices, writeVcpkgNotices } from "./windows-notices.mjs";
 
 test("uses a macOS host's patch minimum consistently and never lowers the configured floor", () => {
   assert.equal(selectMacPackageMinimum("15.0", "15.7.5"), "15.7.5");
@@ -77,6 +78,37 @@ function fixture(t) {
   };
   return { root, put };
 }
+
+function vcpkgFixture(t) {
+  const temporary = fixture(t);
+  const triplet = "x64-windows-static-md";
+  const paragraph = (name, extra = "") => `Package: ${name}\r\nVersion: 1.2.3\r\nArchitecture: ${triplet}\r\nStatus: install ok installed\r\n${extra}\r\n`;
+  temporary.put("installed/vcpkg/status", paragraph("tesseract") + paragraph("libarchive")
+    + paragraph("tesseract", "Feature: training\r\n")
+    + paragraph("uninstalled").replace("install ok installed", "deinstall ok not-installed")
+    + paragraph("another-triplet").replace(triplet, "x64-windows"));
+  temporary.put(`installed/${triplet}/share/tesseract/copyright`, "Apache license");
+  temporary.put(`installed/${triplet}/share/libarchive/copyright`, "BSD license");
+  temporary.put(`installed/${triplet}/share/doc/readme.txt`, "not a package");
+  temporary.put(`installed/${triplet}/share/pkgconfig/library.pc`, "not a package");
+  return { ...temporary, triplet };
+}
+
+test("collects actual installed vcpkg packages and ignores share/doc, features, and other triplets", (t) => {
+  const { root, triplet } = vcpkgFixture(t);
+  assert.deepEqual(readVcpkgNotices(root, triplet).map((record) => record.package), ["libarchive", "tesseract"]);
+  const notices = path.join(root, "notices");
+  const records = writeVcpkgNotices(root, triplet, notices);
+  assert.equal(records.length, 2);
+  assert.equal(readFileSync(path.join(notices, "libarchive.copyright"), "utf8"), "BSD license");
+  assert.doesNotMatch(readFileSync(path.join(notices, "vcpkg-packages.txt"), "utf8"), /doc|uninstalled|another-triplet|undefined/);
+});
+
+test("still rejects a real installed vcpkg package with a missing or empty copyright", (t) => {
+  const { root, put, triplet } = vcpkgFixture(t);
+  put(`installed/${triplet}/share/libarchive/copyright`, "");
+  assert.throws(() => readVcpkgNotices(root, triplet), /Missing or empty.*libarchive/);
+});
 
 function pdfiumFixture(t, relocated = false) {
   const temporary = fixture(t);

@@ -34,6 +34,10 @@ async fn bundled_engine_ocr_recognizes_a_raster_only_page() {
         fallback["ocrApplied"], true,
         "packaged OCR produced no text segments; fallback diagnostics: {fallback}"
     );
+    assert!(
+        fallback["ocrError"].is_null(),
+        "packaged OCR reported an error: {fallback}"
+    );
     let text = result["pages"][0]["nodes"]
         .as_array()
         .expect("OCR should create text nodes")
@@ -47,8 +51,8 @@ async fn bundled_engine_ocr_recognizes_a_raster_only_page() {
         .collect::<String>()
         .to_ascii_lowercase();
     assert!(
-        normalized.contains("mend"),
-        "OCR did not recover the raster fixture word `MEND`: {text}; fallback diagnostics: {}",
+        normalized.contains("document") && normalized.contains("12345"),
+        "OCR did not recover the raster fixture markers `DOCUMENT` and `12345`: {text}; fallback diagnostics: {}",
         fallback
     );
 }
@@ -182,118 +186,7 @@ fn digital_text_pdf() -> Vec<u8> {
 }
 
 fn raster_text_pdf() -> Vec<u8> {
-    const WIDTH: usize = 500;
-    const HEIGHT: usize = 100;
-    const SCALE: usize = 7;
-    // This release smoke checks packaged OCR availability; the paired benchmark
-    // corpus owns accuracy comparisons across longer, representative documents.
-    const WORD: &str = "MEND";
-    let mut pixels = vec![255u8; WIDTH * HEIGHT];
-    let glyphs = [
-        (
-            "G",
-            [
-                "01110", "10001", "10000", "10111", "10001", "10001", "01110",
-            ],
-        ),
-        (
-            "L",
-            [
-                "10000", "10000", "10000", "10000", "10000", "10000", "11111",
-            ],
-        ),
-        (
-            "Y",
-            [
-                "10001", "10001", "01010", "00100", "00100", "00100", "00100",
-            ],
-        ),
-        (
-            "P",
-            [
-                "11110", "10001", "10001", "11110", "10000", "10000", "10000",
-            ],
-        ),
-        (
-            "H",
-            [
-                "10001", "10001", "10001", "11111", "10001", "10001", "10001",
-            ],
-        ),
-        (
-            "M",
-            [
-                "10001", "11011", "10101", "10101", "10001", "10001", "10001",
-            ],
-        ),
-        (
-            "E",
-            [
-                "11111", "10000", "10000", "11110", "10000", "10000", "11111",
-            ],
-        ),
-        (
-            "N",
-            [
-                "10001", "11001", "10101", "10011", "10001", "10001", "10001",
-            ],
-        ),
-        (
-            "D",
-            [
-                "11110", "10001", "10001", "10001", "10001", "10001", "11110",
-            ],
-        ),
-    ];
-    let total_width = WORD.len() * 6 * SCALE - SCALE;
-    let left = (WIDTH - total_width) / 2;
-    let top = (HEIGHT - 7 * SCALE) / 2;
-    for (index, letter) in WORD.chars().enumerate() {
-        let rows = &glyphs
-            .iter()
-            .find(|(value, _)| value.starts_with(letter))
-            .expect("glyph exists")
-            .1;
-        let origin_x = left + index * 6 * SCALE;
-        for (row, pattern) in rows.iter().enumerate() {
-            for (column, pixel) in pattern.bytes().enumerate() {
-                if pixel != b'1' {
-                    continue;
-                }
-                for dy in 0..SCALE {
-                    for dx in 0..SCALE {
-                        let x = origin_x + column * SCALE + dx;
-                        let y = top + row * SCALE + dy;
-                        pixels[y * WIDTH + x] = 0;
-                    }
-                }
-            }
-        }
-    }
-    let mut encoded = pixels
-        .iter()
-        .map(|pixel| format!("{pixel:02X}"))
-        .collect::<String>();
-    encoded.push('>');
-    let image_data = encoded.as_bytes();
-    let mut image = format!(
-        "<< /Type /XObject /Subtype /Image /Width {WIDTH} /Height {HEIGHT} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /ASCIIHexDecode /Length {} >>\nstream\n",
-        image_data.len()
-    )
-    .into_bytes();
-    image.extend_from_slice(image_data);
-    image.extend_from_slice(b"\nendstream");
-    let content = b"q 360 0 0 72 126 360 cm /Im1 Do Q\n";
-    let mut content_stream = format!("<< /Length {} >>\nstream\n", content.len()).into_bytes();
-    content_stream.extend_from_slice(content);
-    content_stream.extend_from_slice(b"endstream");
-    make_pdf(vec![
-        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
-        content_stream,
-        image,
-    ])
+    include_bytes!("ocr-smoke.pdf").to_vec()
 }
 
 fn make_pdf(objects: Vec<Vec<u8>>) -> Vec<u8> {

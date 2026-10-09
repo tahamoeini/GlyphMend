@@ -39,6 +39,16 @@ const MAX_RENDER_DIMENSION: f64 = 4096.0;
 const OCR_DPI: f64 = 300.0;
 const MIN_NATIVE_TEXT_CHARS: usize = 24;
 
+#[derive(Debug, PartialEq, Eq)]
+enum PdfiumLibrarySource {
+    File(PathBuf),
+    System,
+}
+
+// pdfium-render 0.9 keeps its bindings for the lifetime of the process. Providers
+// must reuse them, but may not substitute another runtime for a bundled path.
+static PDFIUM_LIBRARY_SOURCE: Mutex<Option<PdfiumLibrarySource>> = Mutex::new(None);
+
 #[derive(Default)]
 pub struct PdfiumTesseractProvider {
     runtime_paths: Option<RuntimeResourcePaths>,
@@ -126,7 +136,7 @@ impl CapabilityProvider for PdfiumTesseractProvider {
         progress: ProgressSender,
     ) -> std::result::Result<ProviderOutput, CoreError> {
         extract_document(self, input, cancellation, progress)
-            .map_err(|error| CoreError::Provider(error.to_string()))
+            .map_err(|error| CoreError::Provider(format!("{error:#}")))
     }
 }
 
@@ -476,21 +486,46 @@ fn extract_document(
 fn bind_pdfium_library(runtime_paths: Option<&RuntimeResourcePaths>) -> Result<Pdfium> {
     if let Some(paths) = runtime_paths {
         let library_path = Pdfium::pdfium_platform_library_name_at_path(&paths.pdfium_dir);
-        let library = Pdfium::bind_to_library(library_path)
+        let library_path = fs::canonicalize(library_path)
             .context("bundled PDFium runtime is missing from the Tauri resources")?;
-        return Ok(Pdfium::new(library));
+        return initialize_pdfium(PdfiumLibrarySource::File(library_path))
+            .context("could not initialize the bundled PDFium runtime");
     }
 
     let executable_dir = std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf))
         .unwrap_or_else(|| PathBuf::from("."));
-    let library = Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(
-        &executable_dir,
-    ))
-    .or_else(|_| Pdfium::bind_to_system_library())
-    .context("PDFium runtime is missing beside the Companion executable")?;
-    Ok(Pdfium::new(library))
+    let library_path = Pdfium::pdfium_platform_library_name_at_path(&executable_dir);
+    if library_path.is_file() {
+        return initialize_pdfium(PdfiumLibrarySource::File(fs::canonicalize(library_path)?))
+            .context("could not initialize PDFium beside the Companion executable");
+    }
+    initialize_pdfium(PdfiumLibrarySource::System)
+        .context("PDFium runtime is missing beside the Companion executable")
+}
+
+fn initialize_pdfium(source: PdfiumLibrarySource) -> Result<Pdfium> {
+    let mut initialized = PDFIUM_LIBRARY_SOURCE
+        .lock()
+        .map_err(|_| anyhow!("PDFium initialization lock was poisoned"))?;
+    if let Some(existing) = initialized.as_ref() {
+        if existing != &source {
+            return Err(anyhow!(
+                "PDFium is already initialized from {existing:?}; refusing a different runtime {source:?}"
+            ));
+        }
+        // This branch is reached only after our verified source initialized the
+        // global bindings; Default reuses those bindings without loading a file.
+        return Ok(Pdfium::default());
+    }
+    let bindings = match &source {
+        PdfiumLibrarySource::File(file) => Pdfium::bind_to_library(file),
+        PdfiumLibrarySource::System => Pdfium::bind_to_system_library(),
+    }?;
+    let pdfium = Pdfium::new(bindings);
+    *initialized = Some(source);
+    Ok(pdfium)
 }
 
 fn resolve_tessdata(

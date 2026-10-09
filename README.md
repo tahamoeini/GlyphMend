@@ -67,7 +67,7 @@ The integrated Desktop package targets Windows x64 (NSIS setup), Ubuntu 24.04 x6
 
 The standard Windows installer uses the WebView2 bootstrapper and may need an internet connection to install WebView2 on a machine without its runtime. The alternative offline WebView2 installer adds about 127 MB and is not currently bundled. After installation, GlyphMend's frontend, PDFium, Tesseract, and all supported OCR models are bundled for offline work. The Desktop guide records the package and runtime checks: [GlyphMend Desktop](docs/desktop.md).
 
-Every CI/CD run is manually dispatched from one workflow. Choose the fast, test-free `quick` mode for licensing and dependency checks, lint, typecheck, and browser/Desktop frontend builds. Full validation and release modes add Rust formatting, compilation, and dependency-policy checks; paired benchmarks and release packaging are also separate manual modes. See [CI/CD and releases](docs/ci.md) for commands and SemVer rules.
+Every CI/CD run is manually dispatched from one workflow. Choose the fast, test-free `quick` mode for licensing and dependency checks, lint, typecheck, and browser/Desktop frontend builds. Full validation and release modes add Rust formatting, compilation, and dependency-policy checks; paired benchmarks and release packaging are also separate manual modes. Release skips tests by default; enable `release_smoke` to run installed-package PDF/OCR checks. See [CI/CD and releases](docs/ci.md) for commands and SemVer rules.
 
 ## Product contract
 

@@ -8,6 +8,7 @@
     "companion/apps/companion-tauri/web"
   ],
   "scripts": {
+    "ci:check:scripts": "node web-app/scripts/check-ci-scripts.mjs",
     "dev:web": "npm run dev --workspace glyphmend-browser",
     "dev:desktop:web": "npm run dev:desktop --workspace glyphmend-browser",
     "dev:desktop": "npm run desktop:prepare && npm run tauri --workspace glyphmend-desktop-build-tools -- dev",

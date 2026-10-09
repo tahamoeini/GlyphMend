@@ -22,6 +22,11 @@ on:
         options: [fast, high-accuracy]
         default: fast
         required: true
+      release_smoke:
+        description: Run installed-package PDF and OCR smoke tests (release mode only)
+        type: boolean
+        default: false
+        required: true
 
 permissions:
   contents: read
@@ -31,7 +36,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  workflow-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: actionlint@1.7.12
+      - name: Validate every workflow and packaging script before expensive jobs
+        run: |
+          actionlint -pyflakes=
+          npm run ci:check:scripts
+
   web-checks:
+    needs: workflow-checks
     if: inputs.validation == 'quick' || inputs.validation == 'full' || inputs.validation == 'release'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -72,6 +96,7 @@ jobs:
           retention-days: 14
 
   rust-checks:
+    needs: web-checks
     if: inputs.validation == 'full' || inputs.validation == 'release'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -112,6 +137,7 @@ jobs:
         working-directory: companion
 
   web-tests:
+    needs: workflow-checks
     if: inputs.validation == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -129,6 +155,7 @@ jobs:
         run: node --test companion/apps/companion-tauri/src-tauri/scripts/packaging.test.mjs
 
   companion-tests:
+    needs: workflow-checks
     if: inputs.validation == 'full'
     name: Companion tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -176,6 +203,7 @@ jobs:
       - run: node tests/browser-runtime-e2e.mjs
 
   desktop-tests:
+    needs: workflow-checks
     if: inputs.validation == 'full'
     name: Desktop tests (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
@@ -227,6 +255,7 @@ jobs:
           VCPKG_TRIPLET: ${{ matrix.vcpkg_triplet }}
         run: |
           vcpkg install "tesseract:$env:VCPKG_TRIPLET"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
           "VCPKGRS_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
           "VCPKG_DEFAULT_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
@@ -248,6 +277,7 @@ jobs:
           VCPKG_TRIPLET: ${{ matrix.vcpkg_triplet }}
 
   paired-benchmarks:
+    needs: workflow-checks
     if: inputs.validation == 'benchmark'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -317,6 +347,7 @@ jobs:
           retention-days: 90
 
   release-version:
+    needs: workflow-checks
     if: inputs.validation == 'release'
     runs-on: ubuntu-24.04
     outputs:
@@ -410,14 +441,14 @@ jobs:
 
   desktop-package:
     if: inputs.validation == 'release'
-    needs: [release-version, rust-checks]
+    needs: [release-version, rust-checks, browser-package]
     name: Desktop package (${{ matrix.platform }})
     permissions:
       contents: read
       id-token: write
       attestations: write
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - os: windows-2025
@@ -469,12 +500,16 @@ jobs:
         shell: pwsh
         run: |
           vcpkg install "tesseract:$env:VCPKG_TRIPLET"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
           "VCPKGRS_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
           "VCPKG_DEFAULT_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
           "VCPKGRS_DYNAMIC=0" >> $env:GITHUB_ENV
       - name: Install JavaScript workspaces
         run: npm ci --include=optional
+      - name: Check Windows native notices before compiling
+        if: runner.os == 'Windows'
+        run: node companion/apps/companion-tauri/src-tauri/scripts/windows-notices.mjs
       - name: Set Tauri package version
         run: node companion/apps/companion-tauri/src-tauri/scripts/set-version.mjs
         env:
@@ -490,7 +525,7 @@ jobs:
         run: |
           node -e "require('node:fs').mkdirSync('release', { recursive: true })"
       - name: Install and inspect the Windows installer
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && inputs.release_smoke
         shell: pwsh
         run: |
           $installer = Get-ChildItem companion/target/${{ matrix.target }}/release/bundle/nsis -Filter *.exe | Select-Object -First 1
@@ -510,16 +545,16 @@ jobs:
           }
           "GLYPHMEND_TEST_RESOURCE_DIR=$($manifest.Directory.Parent.FullName)" >> $env:GITHUB_ENV
       - name: Smoke test the installed Windows runtime
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && inputs.release_smoke
         working-directory: companion
         env:
           GLYPHMEND_RUNTIME_SMOKE: '1'
         run: |
           node apps/companion-tauri/src-tauri/scripts/validate-runtime.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
+          cargo test --release --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
       - name: Extract and inspect the Ubuntu package
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && inputs.release_smoke
         shell: bash
         run: |
           set -euo pipefail
@@ -553,15 +588,15 @@ jobs:
             exit 1
           fi
       - name: Smoke test the installed Ubuntu runtime
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && inputs.release_smoke
         working-directory: companion
         env:
           GLYPHMEND_RUNTIME_SMOKE: '1'
         run: |
           node apps/companion-tauri/src-tauri/scripts/validate-runtime.mjs
-          cargo test --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
+          cargo test --release --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
       - name: Mount and inspect the macOS disk image
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && inputs.release_smoke
         shell: bash
         run: |
           set -euo pipefail
@@ -599,7 +634,7 @@ jobs:
           export GLYPHMEND_TEST_RESOURCE_DIR="$mount/GlyphMend.app/Contents/Resources"
           export DYLD_LIBRARY_PATH="$mount/GlyphMend.app/Contents/Resources/runtime/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}"
           node companion/apps/companion-tauri/src-tauri/scripts/validate-runtime.mjs
-          cargo test --manifest-path companion/Cargo.toml --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
+          cargo test --release --manifest-path companion/Cargo.toml --locked -p companion-tauri --test desktop_runtime --target ${{ matrix.target }}
       - name: Create native runtime SPDX SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
@@ -607,6 +642,7 @@ jobs:
           format: spdx-json
           output-file: release/SBOM-${{ matrix.platform }}.spdx.json
           upload-artifact: false
+          upload-release-assets: false
       - name: Copy the Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
@@ -659,6 +695,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.release-version.outputs.version }}
+          RELEASE_SMOKE: ${{ inputs.release_smoke }}
         run: |
           set -euo pipefail
           tag="glyphmend-v$VERSION"
@@ -676,10 +713,15 @@ jobs:
           while IFS= read -r -d '' checksum; do
             (cd "$(dirname "$checksum")" && sha256sum --check "$(basename "$checksum")")
           done < <(find release-assets -type f -name 'SHA256SUMS-*.txt' -print0)
+          if [[ "$RELEASE_SMOKE" == true ]]; then
+            smoke_note='Installed-package PDF and OCR smoke tests passed on all four native targets.'
+          else
+            smoke_note='Installed-package PDF and OCR smoke tests were explicitly skipped for this run.'
+          fi
           gh release create "$tag" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "GlyphMend $VERSION" \
-            --notes "Unsigned prerelease packages for GlyphMend $VERSION. The browser artifact and platform-specific integrated Desktop installers share this version. Desktop installers include the headless Companion engine; no separate Companion package is produced. Verify SHA256SUMS and the included SBOMs before distribution. The draft remains unpublished until a maintainer reviews and publishes it." \
+            --notes "Unsigned prerelease packages for GlyphMend $VERSION. The browser artifact and platform-specific integrated Desktop installers share this version. Desktop installers include the headless Companion engine; no separate Companion package is produced. $smoke_note Verify SHA256SUMS and the included SBOMs before distribution. The draft remains unpublished until a maintainer reviews and publishes it." \
             --draft \
             --prerelease

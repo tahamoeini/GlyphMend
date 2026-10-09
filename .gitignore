@@ -14,6 +14,7 @@ build/
 .vite/
 .DS_Store
 *.pdf
+!companion/apps/companion-tauri/src-tauri/tests/ocr-smoke.pdf
 node_modules/
 companion/target/
 companion/apps/companion-tauri/src-tauri/resources/runtime/**

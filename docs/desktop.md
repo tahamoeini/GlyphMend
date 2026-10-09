@@ -47,7 +47,7 @@ The target-specific resource tree includes:
 - Native OCR libraries where required by the host.
 - Project and upstream license notices, source/runtime manifests, file sizes, and SHA-256 checksums.
 
-`prepare-runtime.mjs` downloads only pinned sources and verifies the PDFium archive and model revisions. The bundle step assembles host-native OCR libraries, writes the final manifest, and fails when required files, notices, or checksums are missing. Packaged-runtime release smoke checks run digital-text and raster-OCR extraction against the files staged from each platform installer.
+`prepare-runtime.mjs` downloads only pinned sources and verifies the PDFium archive and model revisions. The bundle step assembles host-native OCR libraries, writes the final manifest, and fails when required files, notices, or checksums are missing. Optional packaged-runtime release smoke checks run digital-text and raster-OCR extraction against the files staged from each platform installer; enable `release_smoke` to run them.
 
 Runtime paths are derived from the app resource directory, not the current working directory. `npm run desktop:prepare` reuses resources only when their target manifest and pinned file checksums match the current OS/architecture. If the manifest names another target, use a separate checkout for that OS; do not clean the other target's resources. If resources are incomplete or stale in a checkout dedicated to the current target, recover from the repository root with `npm run desktop:clean:runtime` followed by `npm run desktop:prepare`. The cleaner removes only recognized generated entries and refuses unknown contents.
 
@@ -111,7 +111,7 @@ The latest user-reported runs also showed a blank or gray window with `WEBKIT_DI
 
 ## Release process
 
-The only Actions workflow runs on manual dispatch; it has no automatic push, pull-request, schedule, or tag trigger. The `quick`, `full`, `benchmark`, and `release` modes are all explicit selections. In `release`, the quick web checks, Rust checks, and shared SemVer prerelease calculation run in parallel. Package jobs wait for those results, then build the browser artifact and four integrated Desktop installers, inspect package contents, and run both packaged-engine smoke cases per target. If all outputs succeed, the workflow creates one unsigned draft prerelease. It creates no standalone Companion packages and does not publish the draft automatically.
+The only Actions workflow runs on manual dispatch; it has no automatic push, pull-request, schedule, or tag trigger. The `quick`, `full`, `benchmark`, and `release` modes are all explicit selections. In `release`, workflow/script checks run first, web checks precede Rust checks, and native builds wait for successful version calculation, Rust checks, and browser packaging. Release runs no test suites by default. Enable the `release_smoke` checkbox to inspect installed/extracted resources and run both packaged-engine smoke cases per target. If all selected steps succeed, the workflow creates one unsigned draft prerelease whose notes record the smoke-test setting. It creates no standalone Companion packages and does not publish the draft automatically.
 
 Stable distribution still requires signing/notarization and clean-machine validation of install, offline launch, restart, workspace recovery, and upgrade. See [distribution status](distribution-plan.md) and [the unified CI guide](ci.md).
 
